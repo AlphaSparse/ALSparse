@@ -70,9 +70,8 @@ __global__ void merge_path_reduce(const int nwarps,
                                   const int c_stride, const W alpha)
 {
     const int cache_lines = ceildivT<int>(nwarps, SPMV_BLOCK_SIZE);
-    const int tid = threadIdx.x;
-    const int start = min(tid * cache_lines, nwarps);
-    const int end = min((tid + 1) * cache_lines, nwarps);
+    const int start = min(threadIdx.x * cache_lines, nwarps);
+    const int end = min((threadIdx.x + 1) * cache_lines, nwarps);
     U value = U{};
     int row = last_row[nwarps - 1];
     if (start < nwarps)
@@ -142,6 +141,7 @@ __device__ void merge_path_spmv(
     V *__restrict__ c, const int c_stride,
     T *__restrict__ row_out, U *__restrict__ val_out)
 {
+    const T lid = threadIdx.x & (WARP_SIZE - 1); // thread index within the warp
     const auto *row_end_ptrs = row_ptrs + 1;
     extern __shared__ char buffer[];
     T *shared_row_ptrs = reinterpret_cast<T *>(buffer);
