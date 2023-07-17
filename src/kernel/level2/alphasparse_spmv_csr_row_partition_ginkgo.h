@@ -419,7 +419,8 @@ alphasparseStatus_t spmv_csr_load(alphasparseHandle_t handle,
                                   const T *csr_col_ind,
                                   const U *x,
                                   const W beta,
-                                  V *y)
+                                  V *y,
+                                  void *externalBuffer)
 {
     const T SM = 80;
     const T MAX_WARP_PER_SM = 64;
@@ -449,20 +450,14 @@ alphasparseStatus_t spmv_csr_load(alphasparseHandle_t handle,
     // auto end_time = std::chrono::high_resolution_clock::now();
     // auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
     // std::cout << "balanced time: " << duration.count() << " nanoseconds" << std::endl;
-    T *partition;
-    cudaMalloc((void **)&partition, (nwarps) * sizeof(T));
+    T *partition = (T *)externalBuffer;
     const int64_t ave = ceildivT<int64_t>(nnz, warp_size);
 
-    cudaEvent_t event_start, event_stop;
-    float elapsed_time = 0.0;
-    GPU_TIMER_START(elapsed_time, event_start, event_stop);
     balanced_partition_row_by_nnz<T, warp_size><<<dim3(GRIDSIZE), dim3(BLOCK_SIZE), 0, handle->stream>>>(csr_row_ptr + 1, m - 1, nwarps, partition, ave);
     load_balance_spmv(m, n, nnz, alpha, partition, csr_row_ptr,
                       csr_col_ind, csr_val, x, beta, y,
                       nwarps, warp_size, warps_in_block);
     cudaDeviceSynchronize();
-    GPU_TIMER_END(elapsed_time, event_start, event_stop);
-    printf("load balance spmv time: %lf\n", elapsed_time);
 
     return ALPHA_SPARSE_STATUS_SUCCESS;
 }

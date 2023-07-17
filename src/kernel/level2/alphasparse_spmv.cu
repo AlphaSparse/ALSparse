@@ -23,23 +23,23 @@ spmv_template(alphasparseHandle_t handle,
               const void *beta,
               alphasparseDnVecDescr_t vecY,
               alphasparseSpMVAlg_t alg,
-              void* externalBuffer)
+              void *externalBuffer)
 {
   switch (matA->format)
   {
   case ALPHA_SPARSE_FORMAT_COO:
   {
     spmv_coo_ginkgo<T, U, V, W>(handle,
-                         (T)matA->rows,
-                         (T)matA->cols,
-                         (T)matA->nnz,
-                         *((W *)alpha),
-                         (U *)matA->val_data,
-                         (T *)matA->row_data,
-                         (T *)matA->col_data,
-                         (U *)vecX->values,
-                         *((W *)beta),
-                         (V *)vecY->values);
+                                (T)matA->rows,
+                                (T)matA->cols,
+                                (T)matA->nnz,
+                                *((W *)alpha),
+                                (U *)matA->val_data,
+                                (T *)matA->row_data,
+                                (T *)matA->col_data,
+                                (U *)vecX->values,
+                                *((W *)beta),
+                                (V *)vecY->values);
     break;
   }
   case ALPHA_SPARSE_FORMAT_CSR:
@@ -83,16 +83,17 @@ spmv_template(alphasparseHandle_t handle,
     case ALPHA_SPARSE_SPMV_ROW_PARTITION:
     {
       spmv_csr_load<T, U, V, W>(handle,
-                                     (T)matA->rows,
-                                     (T)matA->cols,
-                                     (T)matA->nnz,
-                                     *((W *)alpha),
-                                     (U *)matA->val_data,
-                                     (T *)matA->row_data,
-                                     (T *)matA->col_data,
-                                     (U *)vecX->values,
-                                     *((W *)beta),
-                                     (V *)vecY->values);
+                                (T)matA->rows,
+                                (T)matA->cols,
+                                (T)matA->nnz,
+                                *((W *)alpha),
+                                (U *)matA->val_data,
+                                (T *)matA->row_data,
+                                (T *)matA->col_data,
+                                (U *)vecX->values,
+                                *((W *)beta),
+                                (V *)vecY->values,
+                                externalBuffer);
       break;
     }
     case ALPHA_SPARSE_SPMV_ALG_MERGE:
@@ -107,22 +108,23 @@ spmv_template(alphasparseHandle_t handle,
                                         (T *)matA->col_data,
                                         (U *)vecX->values,
                                         *((W *)beta),
-                                        (V *)vecY->values, externalBuffer);
+                                        (V *)vecY->values,
+                                        externalBuffer);
       break;
     }
     case ALPHA_SPARSE_SPMV_ADAPTIVE:
     {
       spmv_csr_adaptive2<T, U, V, W>(handle,
-                                    (T)matA->rows,
-                                    (T)matA->cols,
-                                    (T)matA->nnz,
-                                    *((W *)alpha),
-                                    (U *)matA->val_data,
-                                    (T *)matA->row_data,
-                                    (T *)matA->col_data,
-                                    (U *)vecX->values,
-                                    *((W *)beta),
-                                    (V *)vecY->values);
+                                     (T)matA->rows,
+                                     (T)matA->cols,
+                                     (T)matA->nnz,
+                                     *((W *)alpha),
+                                     (U *)matA->val_data,
+                                     (T *)matA->row_data,
+                                     (T *)matA->col_data,
+                                     (U *)vecX->values,
+                                     *((W *)beta),
+                                     (V *)vecY->values);
       break;
     }
     }
@@ -279,19 +281,46 @@ alphasparseSpMV_bufferSize(alphasparseHandle_t handle,
                            alphasparseSpMVAlg_t alg,
                            size_t *bufferSize)
 {
-  const int total = matA->rows + matA->nnz;
-  const int grid_num =
-      ceildiv(total, SPMV_BLOCK_SIZE * 8);
-  size_t typeSize = 4;
-  if (computeType == ALPHA_R_32F)
-    typeSize = 4;
-  else if (computeType == ALPHA_R_64F)
-    typeSize = 8;
-  else if (computeType == ALPHA_C_32F)
-    typeSize = 8;
-  else if (computeType == ALPHA_C_64F)
-    typeSize = 16;
+  switch (alg)
+  {
+  case ALPHA_SPARSE_SPMV_ALG_MERGE:
+  {
+    const int total = matA->rows + matA->nnz;
+    const int grid_num =
+        ceildiv(total, SPMV_BLOCK_SIZE * 8);
+    size_t typeSize = 4;
+    if (computeType == ALPHA_R_32F)
+      typeSize = 4;
+    else if (computeType == ALPHA_R_64F)
+      typeSize = 8;
+    else if (computeType == ALPHA_C_32F)
+      typeSize = 8;
+    else if (computeType == ALPHA_C_64F)
+      typeSize = 16;
 
-  *bufferSize = grid_num * 2 * typeSize;
+    *bufferSize = grid_num * 2 * typeSize;
+    break;
+  }
+  case ALPHA_SPARSE_SPMV_ROW_PARTITION:
+  {
+    const int SM = 80;
+    const int MAX_WARP_PER_SM = 64;
+    const int64_t warp_size = 32;
+    const int64_t nwarps_ = SM * MAX_WARP_PER_SM / warp_size;
+    int nwarps = clac_size(matA->nnz, warp_size, nwarps_);
+    size_t typeSize = 4;
+    if (computeType == ALPHA_R_32F)
+      typeSize = 4;
+    else if (computeType == ALPHA_R_64F)
+      typeSize = 8;
+    else if (computeType == ALPHA_C_32F)
+      typeSize = 8;
+    else if (computeType == ALPHA_C_64F)
+      typeSize = 16;
+    *bufferSize = nwarps * typeSize;
+    break;
+  }
+  }
+
   return ALPHA_SPARSE_STATUS_SUCCESS;
 }
