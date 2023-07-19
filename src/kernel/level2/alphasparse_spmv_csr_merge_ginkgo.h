@@ -192,12 +192,14 @@ __device__ void merge_path_spmv(
         {
             if (start_x == block_num_rows || ind < shared_row_ptrs[start_x])
             {
-                value += shared_val[ind - block_start_y] * __ldg(&b[shared_col_idxs[ind - block_start_y]]);
+                value += shared_val[start_y] * __ldg(&b[shared_col_idxs[start_y]]);
+                start_y++;
                 ind++;
             }
             else
             {
-                c[row_i] = alpha * value + beta * c[row_i];
+                atomicAdd(&c[row_i], alpha * value + (beta - make_value<W>(1.0)) * c[row_i]);
+                // c[row_i] = alpha * value + beta * c[row_i];
                 start_x++;
                 row_i++;
                 value = U{};
@@ -214,12 +216,14 @@ __device__ void merge_path_spmv(
     bool last = block_segment_scan_reverse(tmp_ind, tmp_val);
     if (threadIdx.x == SPMV_BLOCK_SIZE - 1)
     {
-        row_out[blockIdx.x] = min(end_x, num_rows - 1);
-        val_out[blockIdx.x] = tmp_val[threadIdx.x];
+        atomicAdd(&c[min(end_x, num_rows - 1)], alpha * tmp_val[threadIdx.x]);
+        // row_out[blockIdx.x] = min(end_x, num_rows - 1);
+        // val_out[blockIdx.x] = tmp_val[threadIdx.x];
     }
     else if (last)
     {
-        c[row_i] += alpha * tmp_val[threadIdx.x];
+        atomicAdd(&c[row_i], alpha * tmp_val[threadIdx.x]);
+        // c[row_i] += alpha * tmp_val[threadIdx.x];
     }
 }
 
@@ -325,11 +329,11 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
         // GPU_TIMER_END(elapsed_time2, event_start2, event_stop2);
         // printf("compute_time1:%f ms\n", elapsed_time2);
         // GPU_TIMER_START(elapsed_time2, event_start2, event_stop2);
-        merge_path_reduce<<<1, SPMV_BLOCK_SIZE, 0, 0>>>(
-            grid_num, val_out,
-            row_out,
-            y,
-            1, alpha);
+        // merge_path_reduce<<<1, SPMV_BLOCK_SIZE, 0, 0>>>(
+        //     grid_num, val_out,
+        //     row_out,
+        //     y,
+        //     1, alpha);
         // GPU_TIMER_END(elapsed_time2, event_start2, event_stop2);
         // printf("compute_time2:%f ms\n", elapsed_time2);
     }

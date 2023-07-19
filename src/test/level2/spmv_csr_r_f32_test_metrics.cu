@@ -41,16 +41,11 @@ float *cuda_y;
 
 // parms for kernel
 const float alpha = 2.1f;
-const float beta = 3.2f;
+const float beta = 0.f;
 
 std::vector<double> cuda_time_list, alpha_time_list, cuda_bandwidth_list, alpha_bandwidth_list, cuda_gflops_list, alpha_gflops_list;
-std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT,
-                                              CUSPARSE_SPMV_CSR_ALG1,
-                                              CUSPARSE_SPMV_CSR_ALG2};
-std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ALG_SCALAR,
-                                                    ALPHA_SPARSE_SPMV_ALG_VECTOR,
-                                                    ALPHA_SPARSE_SPMV_ROW_PARTITION,
-                                                    ALPHA_SPARSE_SPMV_ALG_MERGE};
+std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT};
+std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ALG_MERGE};
 // std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT};
 // std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ADAPTIVE};
 
@@ -332,16 +327,16 @@ int main(int argc, const char *argv[])
   alpha_fill_random(x_val, 2, n);
   alpha_fill_random(ict_y, 1, m);
   alpha_fill_random(cuda_y, 1, m);
-  // for (int i = 0; i < 20; i++)
-  // {
-  //   std::cout << ict_y[i] << ", ";
-  // }
-  // std::cout << std::endl;
-  // for (int i = 0; i < 20; i++)
-  // {
-  //   std::cout << cuda_y[i] << ", ";
-  // }
-  // printf("\n");
+  for (int i = 0; i < 20; i++)
+  {
+    std::cout << ict_y[i] << ", ";
+  }
+  std::cout << std::endl;
+  for (int i = 0; i < 20; i++)
+  {
+    std::cout << cuda_y[i] << ", ";
+  }
+  printf("\n");
   warm_up = 100;
   trials = 100;
   cuda_mv();
@@ -358,16 +353,22 @@ int main(int argc, const char *argv[])
   //   filename << "Results:TEST Mat=" << file << ",time=" << alpha_time_list[i] << ",Perf=" << alpha_gflops_list[i] << "\n";
   // }
   // filename.close();
-  // for (int i = 0; i < 20; i++)
+  // for (int i = 0; i < m; i++)
   // {
   //   std::cout << ict_y[i] - 1 << ", ";
   // }
   // std::cout << std::endl;
-  // for (int i = 0; i < 20; i++)
+  // for (int i = 0; i < m; i++)
   // {
   //   std::cout << cuda_y[i] - 1 << ", ";
   // }
   // std::cout << std::endl;
+  for (int i = 0; i < m; i++)
+  {
+    if (fabs(cuda_y[i] - ict_y[i]) / ict_y[i] > 1e-2)
+      std::cout << std::fixed << std::setprecision(0) << cuda_y[i] << "," << ict_y[i] << "\n";
+  }
+  std::cout << std::endl;
 
   check((float *)cuda_y, m, (float *)ict_y, m);
   return 0;
