@@ -8,8 +8,8 @@
 #define ITEMS_PER_THREAD 8
 #define SPMV_BLOCK_SIZE 256
 
-cudaEvent_t event_start2, event_stop2;
-float elapsed_time2 = 0.0;
+// cudaEvent_t event_start2, event_stop2;
+// float elapsed_time2 = 0.0;
 
 inline constexpr int64_t ceildiv(int64_t num, int64_t den)
 {
@@ -179,83 +179,64 @@ __device__ void merge_path_spmv(
     {
         shared_row_ptrs[i] = row_end_ptrs[block_start_x + i];
     }
-    for (int ii = 0; ii < 1; ii++)
+    // 763513
+    for (int i = threadIdx.x;
+         i < block_num_nonzeros && block_start_y + i < nnz;
+         i += SPMV_BLOCK_SIZE)
     {
-        // 763513
-        for (int i = threadIdx.x;
-             i < block_num_nonzeros && block_start_y + i < nnz;
-             i += SPMV_BLOCK_SIZE)
-        {
-            shared_val[i] = val[block_start_y + i];
-            shared_col_idxs[i] = col_idxs[block_start_y + i];
-        }
+        shared_val[i] = val[block_start_y + i];
+        shared_col_idxs[i] = col_idxs[block_start_y + i];
     }
     cooperative_groups::this_thread_block().sync();
 
-    T start_x1;
-    T start_y1;
-    for (int ii = 0; ii < 1; ii++)
-    {
-        // 280098.5
-        merge_path_search(int(IPT * threadIdx.x), block_num_rows,
-                          block_num_nonzeros, shared_row_ptrs, block_start_y,
-                          &start_x1, &start_y1);
-    }
-
-    T ind;
-    T row_i;
-    U value;
     T start_x;
     T start_y;
-    for (int ii = 0; ii < 1; ii++)
-    {
-        // 1316374.3
-        start_x = start_x1;
-        start_y = start_y1;
-        ind = block_start_y + start_y;
-        row_i = block_start_x + start_x;
-        value = U{};
+    // 280098.5
+    merge_path_search(int(IPT * threadIdx.x), block_num_rows,
+                      block_num_nonzeros, shared_row_ptrs, block_start_y,
+                      &start_x, &start_y);
+
+    // 1316374.3
+    T ind = block_start_y + start_y;
+    T row_i = block_start_x + start_x;
+    U value = U{};
 #pragma unroll
-        for (T i = 0; i < IPT; i++)
+    for (T i = 0; i < IPT; i++)
+    {
+        if (row_i < num_rows)
         {
-            if (row_i < num_rows)
+            if (ind < shared_row_ptrs[start_x] || start_x == block_num_rows)
             {
-                if (ind < shared_row_ptrs[start_x] || start_x == block_num_rows)
-                {
-                    value += shared_val[start_y] * __ldg(&b[shared_col_idxs[start_y]]);
-                    start_y++;
-                    ind++;
-                }
-                else
-                {
-                    c[row_i] = alpha * value + beta * c[row_i];
-                    start_x++;
-                    row_i++;
-                    value = U{};
-                }
+                value += shared_val[start_y] * __ldg(&b[shared_col_idxs[start_y]]);
+                start_y++;
+                ind++;
+            }
+            else
+            {
+                c[row_i] = alpha * value + beta * c[row_i];
+                start_x++;
+                row_i++;
+                value = U{};
             }
         }
     }
     cooperative_groups::this_thread_block().sync();
-    for (int ii = 0; ii < 1; ii++)
+    // 465531.2
+    int *tmp_ind = shared_row_ptrs;
+    U *tmp_val =
+        reinterpret_cast<U *>(shared_row_ptrs + SPMV_BLOCK_SIZE);
+    tmp_val[threadIdx.x] = value;
+    tmp_ind[threadIdx.x] = row_i;
+    cooperative_groups::this_thread_block().sync();
+    bool last = block_segment_scan_reverse(tmp_ind, tmp_val);
+    if (threadIdx.x == SPMV_BLOCK_SIZE - 1)
     {
-        // 465531.2
-        int *tmp_ind = shared_row_ptrs;
-        U *tmp_val =
-            reinterpret_cast<U *>(shared_row_ptrs + SPMV_BLOCK_SIZE);
-        tmp_val[threadIdx.x] = value;
-        tmp_ind[threadIdx.x] = row_i;
-        cooperative_groups::this_thread_block().sync();
-        bool last = block_segment_scan_reverse(tmp_ind, tmp_val);
-        if (threadIdx.x == SPMV_BLOCK_SIZE - 1)
-        {
-            row_out[blockIdx.x] = min(end_x, num_rows - 1);
-            val_out[blockIdx.x] = tmp_val[threadIdx.x];
-        }
-        else if (last)
-        {
-            c[row_i] += alpha * tmp_val[threadIdx.x];
-        }
+        row_out[blockIdx.x] = min(end_x, num_rows - 1);
+        val_out[blockIdx.x] = tmp_val[threadIdx.x];
+    }
+    else if (last)
+    {
+        c[row_i] += alpha * tmp_val[threadIdx.x];
     }
 }
 
