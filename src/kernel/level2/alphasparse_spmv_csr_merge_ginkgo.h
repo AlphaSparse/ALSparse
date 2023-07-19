@@ -6,7 +6,7 @@
 #include <cstdint>
 
 #define ITEMS_PER_THREAD 8
-#define SPMV_BLOCK_SIZE 128
+#define SPMV_BLOCK_SIZE 256
 
 cudaEvent_t event_start2, event_stop2;
 float elapsed_time2 = 0.0;
@@ -130,23 +130,21 @@ __forceinline__ __device__ void merge_path_search(
     *y = diagonal - x_min;
 }
 
-template <typename T, typename U, typename V, typename W>
+template <int block_items, typename T, typename U, typename V, typename W>
 __device__ void merge_path_spmv(
     int IPT,
     const T num_rows, const T nnz, const T num_merge_items,
-    const T block_items, const W alpha, const U *__restrict__ val,
+    const W alpha, const U *__restrict__ val,
     const T *__restrict__ col_idxs,
     const T *__restrict__ row_ptrs, const int srow,
     const U *__restrict__ b, const int b_stride, const W beta,
     V *__restrict__ c, const int c_stride,
     T *__restrict__ row_out, U *__restrict__ val_out)
 {
-    const T lid = threadIdx.x & (WARP_SIZE - 1); // thread index within the warp
     const auto *row_end_ptrs = row_ptrs + 1;
-    extern __shared__ char buffer[];
-    T *shared_row_ptrs = reinterpret_cast<T *>(buffer);
-    U *shared_val = reinterpret_cast<U *>(&buffer[block_items * sizeof(U)]);
-    T *shared_col_idxs = reinterpret_cast<T *>(&buffer[block_items * (sizeof(U) + sizeof(T))]);
+    __shared__ T shared_row_ptrs[block_items];
+    __shared__ U shared_val[block_items];
+    __shared__ T shared_col_idxs[block_items];
 
     const int diagonal =
         min(block_items * blockIdx.x, num_merge_items);
@@ -190,9 +188,10 @@ __device__ void merge_path_spmv(
     {
         if (row_i < num_rows)
         {
-            if (start_x == block_num_rows || ind < shared_row_ptrs[start_x])
+            if (ind < shared_row_ptrs[start_x] || start_x == block_num_rows)
             {
-                value += shared_val[ind - block_start_y] * __ldg(&b[shared_col_idxs[ind - block_start_y]]);
+                value += shared_val[start_y] * __ldg(&b[shared_col_idxs[start_y]]);
+                start_y++;
                 ind++;
             }
             else
@@ -223,11 +222,11 @@ __device__ void merge_path_spmv(
     }
 }
 
-template <typename T, typename U, typename V, typename W>
+template <int block_items, typename T, typename U, typename V, typename W>
 __global__ __launch_bounds__(SPMV_BLOCK_SIZE) void abstract_merge_path_spmv(
     int items_per_thread,
     const T num_rows, const T nnz, const T num_merge_items,
-    const int block_items, const W __restrict__ alpha,
+    const W __restrict__ alpha,
     const U *__restrict__ val, const T *__restrict__ col_idxs,
     const T *__restrict__ row_ptrs, const int srow,
     const U *__restrict__ b, const int b_stride,
@@ -235,9 +234,9 @@ __global__ __launch_bounds__(SPMV_BLOCK_SIZE) void abstract_merge_path_spmv(
     const int c_stride, T *__restrict__ row_out,
     U *__restrict__ val_out)
 {
-    merge_path_spmv(
+    merge_path_spmv<block_items>(
         items_per_thread, num_rows, nnz,
-        num_merge_items, block_items, alpha, val,
+        num_merge_items, alpha, val,
         col_idxs, row_ptrs, srow, b, b_stride, beta, c, c_stride,
         row_out, val_out);
 }
@@ -288,27 +287,26 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
     items_per_thread = std::max(minimal_num, items_per_thread);
 
     const T num_merge_items = m + nnz;
-    const T block_items = SPMV_BLOCK_SIZE * items_per_thread;
+    const int block_items = SPMV_BLOCK_SIZE * ITEMS_PER_THREAD;
     const T grid_num =
         ceildiv(num_merge_items, block_items);
     const auto grid = grid_num;
 
     val_out = (U *)externalBuffer;
     row_out = reinterpret_cast<T *>(val_out + grid_num);
-    int maxbytes = block_items * (sizeof(U) + sizeof(T) * 2);
+    // int maxbytes = block_items * (sizeof(U) + sizeof(T) * 2);
     // printf("maxbytes:%d\n", maxbytes);
-    cudaFuncSetAttribute(abstract_merge_path_spmv<T, U, V, W>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
+    // cudaFuncSetAttribute(abstract_merge_path_spmv<T, U, V, W>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
     if (&alpha != nullptr && &beta != nullptr)
     {
         // GPU_TIMER_START(elapsed_time2, event_start2, event_stop2);
         if (grid_num > 0)
         {
-            abstract_merge_path_spmv<<<grid, SPMV_BLOCK_SIZE, maxbytes, 0>>>(
+            abstract_merge_path_spmv<block_items><<<grid, SPMV_BLOCK_SIZE, 0, 0>>>(
                 items_per_thread,
                 m,
                 nnz,
                 num_merge_items,
-                block_items,
                 alpha,
                 csr_val,
                 csr_col_ind,

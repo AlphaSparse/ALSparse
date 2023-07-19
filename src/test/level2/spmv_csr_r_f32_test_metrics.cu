@@ -44,13 +44,8 @@ const float alpha = 2.1f;
 const float beta = 3.2f;
 
 std::vector<double> cuda_time_list, alpha_time_list, cuda_bandwidth_list, alpha_bandwidth_list, cuda_gflops_list, alpha_gflops_list;
-std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT,
-                                              CUSPARSE_SPMV_CSR_ALG1,
-                                              CUSPARSE_SPMV_CSR_ALG2};
-std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ALG_SCALAR,
-                                                    ALPHA_SPARSE_SPMV_ALG_VECTOR,
-                                                    ALPHA_SPARSE_SPMV_ROW_PARTITION,
-                                                    ALPHA_SPARSE_SPMV_ALG_MERGE};
+std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT};
+std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ALG_MERGE};
 // std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT};
 // std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ADAPTIVE};
 
