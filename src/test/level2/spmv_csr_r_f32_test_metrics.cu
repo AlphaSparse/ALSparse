@@ -41,7 +41,7 @@ float *cuda_y;
 
 // parms for kernel
 const float alpha = 2.1f;
-const float beta = 0.f;
+const float beta = 3.2f;
 
 std::vector<double> cuda_time_list, alpha_time_list, cuda_bandwidth_list, alpha_bandwidth_list, cuda_gflops_list, alpha_gflops_list;
 std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT};
@@ -363,12 +363,12 @@ int main(int argc, const char *argv[])
   //   std::cout << cuda_y[i] - 1 << ", ";
   // }
   // std::cout << std::endl;
-  for (int i = 0; i < m; i++)
-  {
-    if (fabs(cuda_y[i] - ict_y[i]) / ict_y[i] > 1e-2)
-      std::cout << std::fixed << std::setprecision(0) << cuda_y[i] << "," << ict_y[i] << "\n";
-  }
-  std::cout << std::endl;
+  // for (int i = 0; i < m; i++)
+  // {
+  //   if (fabs(cuda_y[i] - ict_y[i]) / ict_y[i] > 1e-2)
+  //     std::cout << std::fixed << std::setprecision(0) << cuda_y[i] << "," << ict_y[i] << "\n";
+  // }
+  // std::cout << std::endl;
 
   check((float *)cuda_y, m, (float *)ict_y, m);
   return 0;

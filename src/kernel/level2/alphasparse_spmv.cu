@@ -286,7 +286,7 @@ alphasparseSpMV_bufferSize(alphasparseHandle_t handle,
   case ALPHA_SPARSE_SPMV_ALG_MERGE:
   {
     const int total = matA->rows + matA->nnz;
-    const int grid_num =
+    const int block_num =
         ceildiv(total, SPMV_BLOCK_SIZE * 8);
     size_t typeSize = 4;
     if (computeType == ALPHA_R_32F)
@@ -297,8 +297,7 @@ alphasparseSpMV_bufferSize(alphasparseHandle_t handle,
       typeSize = 8;
     else if (computeType == ALPHA_C_64F)
       typeSize = 16;
-
-    *bufferSize = grid_num * 2 * typeSize;
+    *bufferSize = (block_num * 4 + 2) * typeSize;
     break;
   }
   case ALPHA_SPARSE_SPMV_ROW_PARTITION:
