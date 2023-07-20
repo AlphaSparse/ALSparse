@@ -44,7 +44,7 @@ const float alpha = 2.1f;
 const float beta = 3.2f;
 
 std::vector<double> cuda_time_list, alpha_time_list, cuda_bandwidth_list, alpha_bandwidth_list, cuda_gflops_list, alpha_gflops_list;
-std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT};
+std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT, CUSPARSE_SPMV_CSR_ALG1, CUSPARSE_SPMV_CSR_ALG2};
 std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ALG_MERGE};
 // std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT};
 // std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ADAPTIVE};
@@ -327,15 +327,15 @@ int main(int argc, const char *argv[])
   alpha_fill_random(x_val, 2, n);
   alpha_fill_random(ict_y, 1, m);
   alpha_fill_random(cuda_y, 1, m);
-  for (int i = 0; i < 20; i++)
-  {
-    std::cout << ict_y[i] << ", ";
-  }
-  std::cout << std::endl;
-  for (int i = 0; i < 20; i++)
-  {
-    std::cout << cuda_y[i] << ", ";
-  }
+  // for (int i = 0; i < 20; i++)
+  // {
+  //   std::cout << ict_y[i] << ", ";
+  // }
+  // std::cout << std::endl;
+  // for (int i = 0; i < 20; i++)
+  // {
+  //   std::cout << cuda_y[i] << ", ";
+  // }
   printf("\n");
   warm_up = 100;
   trials = 100;
@@ -353,12 +353,12 @@ int main(int argc, const char *argv[])
   //   filename << "Results:TEST Mat=" << file << ",time=" << alpha_time_list[i] << ",Perf=" << alpha_gflops_list[i] << "\n";
   // }
   // filename.close();
-  // for (int i = 0; i < m; i++)
+  // for (int i = 0; i < 20; i++)
   // {
   //   std::cout << ict_y[i] - 1 << ", ";
   // }
   // std::cout << std::endl;
-  // for (int i = 0; i < m; i++)
+  // for (int i = 0; i < 20; i++)
   // {
   //   std::cout << cuda_y[i] - 1 << ", ";
   // }

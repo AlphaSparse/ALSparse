@@ -26,6 +26,56 @@ __global__ void array_scale(T m, V *array, W beta)
     }
 }
 
+template <unsigned subwarp_size = 32, typename ValueType, typename IndexType>
+__device__ __forceinline__ bool segment_scan2(
+    const cooperative_groups::thread_block_tile<subwarp_size> &group,
+    const IndexType ind,
+    ValueType &val)
+{
+    bool head = true;
+#pragma unroll
+    for (int i = 1; i < subwarp_size; i <<= 1)
+    {
+        const IndexType add_ind = group.shfl_up(ind, i);
+        ValueType add_val{};
+        if (add_ind == ind && group.thread_rank() >= i)
+        {
+            add_val = val;
+            if (i == 1)
+            {
+                head = false;
+            }
+        }
+        add_val = group.shfl_down(add_val, i);
+        if (group.thread_rank() < subwarp_size - i)
+        {
+            val += add_val;
+        }
+    }
+    return head;
+}
+
+template <unsigned subwarp_size, typename ValueType1, typename ValueType2, typename IndexType,
+          typename Closure>
+__device__ __forceinline__ void warp_atomic_add2(
+    const cooperative_groups::thread_block_tile<subwarp_size> &group, bool force_write,
+    ValueType1 &val, const IndexType row, ValueType2 *__restrict__ c,
+    Closure scale)
+{
+    // do a local scan to avoid atomic collisions
+    const bool need_write = segment_scan2(
+        group, row, val, [](ValueType1 a, ValueType1 b)
+        { return a + b; });
+    if (need_write && force_write)
+    {
+        atomicAdd(&(c[row]), scale(val));
+    }
+    if (!need_write || force_write)
+    {
+        val = ValueType1{};
+    }
+}
+
 template <typename T, typename U, typename V, typename W>
 static alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
                                                  T m,
@@ -200,7 +250,8 @@ __device__ void merge_path_spmv(
         shared_val[i] = val[block_start_y + i];
         shared_col_idxs[i] = col_idxs[block_start_y + i];
     }
-    cooperative_groups::this_thread_block().sync();
+    cooperative_groups::thread_block g = cooperative_groups::this_thread_block();
+    g.sync();
 
     T start_x;
     T start_y;
@@ -225,24 +276,35 @@ __device__ void merge_path_spmv(
         else
         {
             atomicAdd(&c[row_i], alpha * value);
-            // c[row_i] = alpha * value + c[row_i];
             start_x++;
             row_i++;
             value = U{};
         }
     }
-    cooperative_groups::this_thread_block().sync();
-    // 465531.2
-    T *tmp_ind = shared_row_ptrs;
-    U *tmp_val = reinterpret_cast<U *>(tmp_ind + SPMV_BLOCK_SIZE);
-    tmp_val[threadIdx.x] = value;
-    tmp_ind[threadIdx.x] = row_i;
-    cooperative_groups::this_thread_block().sync();
-    bool last = block_segment_scan_reverse(tmp_ind, tmp_val);
-    if (last)
+    g.sync();
+    const cooperative_groups::thread_block_tile<32> tile_block =
+        cooperative_groups::tiled_partition<32>(g);
+    bool head = segment_scan2(tile_block, row_i, value);
+    if (head)
     {
-        atomicAdd(&c[row_i], alpha * tmp_val[threadIdx.x]);
+        atomicAdd(&c[row_i], alpha * value);
     }
+    // // 465531.2
+    // T *tmp_ind = shared_row_ptrs;
+    // U *tmp_val = reinterpret_cast<U *>(tmp_ind + SPMV_BLOCK_SIZE);
+    // tmp_val[threadIdx.x] = value;
+    // tmp_ind[threadIdx.x] = row_i;
+    // g.sync();
+    // bool last = block_segment_scan_reverse(tmp_ind, tmp_val);
+    // if (threadIdx.x == SPMV_BLOCK_SIZE - 1)
+    // {
+    //     row_out[blockIdx.x] = min(end_x, num_rows - 1);
+    //     val_out[blockIdx.x] = tmp_val[threadIdx.x];
+    // }
+    // else if (last)
+    // {
+    //     c[row_i] += alpha * tmp_val[threadIdx.x];
+    // }
 }
 
 template <typename T>
@@ -352,8 +414,6 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
     const int grid_size = ceildiv(block_num, block_size);
     if (&alpha != nullptr && &beta != nullptr)
     {
-        array_scale<<<grid_size, block_size>>>(m, y, beta);
-
         abstract_merge_path_search<T><<<grid_size, block_size>>>(
             block_start_xs,
             block_start_ys,
@@ -366,6 +426,7 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
         // GPU_TIMER_START(elapsed_time2, event_start2, event_stop2);
         if (block_num > 0)
         {
+            array_scale<<<grid_size, block_size>>>(m, y, beta);
             abstract_merge_path_spmv<block_items><<<block_num, SPMV_BLOCK_SIZE, maxbytes, 0>>>(
                 items_per_thread,
                 m,
