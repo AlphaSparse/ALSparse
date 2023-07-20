@@ -16,6 +16,16 @@ inline constexpr int64_t ceildiv(int64_t num, int64_t den)
     return (num + den - 1) / den;
 }
 
+template <typename T, typename V, typename W>
+__global__ void array_scale(T m, V *array, W beta)
+{
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < m)
+    {
+        array[idx] *= beta;
+    }
+}
+
 template <typename T, typename U, typename V, typename W>
 static alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
                                                  T m,
@@ -214,7 +224,8 @@ __device__ void merge_path_spmv(
         }
         else
         {
-            c[row_i] = alpha * value + beta * c[row_i];
+            atomicAdd(&c[row_i], alpha * value);
+            // c[row_i] = alpha * value + c[row_i];
             start_x++;
             row_i++;
             value = U{};
@@ -228,14 +239,9 @@ __device__ void merge_path_spmv(
     tmp_ind[threadIdx.x] = row_i;
     cooperative_groups::this_thread_block().sync();
     bool last = block_segment_scan_reverse(tmp_ind, tmp_val);
-    if (threadIdx.x == SPMV_BLOCK_SIZE - 1)
+    if (last)
     {
-        row_out[blockIdx.x] = min(end_x, num_rows - 1);
-        val_out[blockIdx.x] = tmp_val[threadIdx.x];
-    }
-    else if (last)
-    {
-        c[row_i] += alpha * tmp_val[threadIdx.x];
+        atomicAdd(&c[row_i], alpha * tmp_val[threadIdx.x]);
     }
 }
 
@@ -346,6 +352,8 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
     const int grid_size = ceildiv(block_num, block_size);
     if (&alpha != nullptr && &beta != nullptr)
     {
+        array_scale<<<grid_size, block_size>>>(m, y, beta);
+
         abstract_merge_path_search<T><<<grid_size, block_size>>>(
             block_start_xs,
             block_start_ys,
@@ -381,11 +389,11 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
         // GPU_TIMER_END(elapsed_time2, event_start2, event_stop2);
         // printf("compute_time1:%f ms\n", elapsed_time2);
         // GPU_TIMER_START(elapsed_time2, event_start2, event_stop2);
-        merge_path_reduce<<<1, SPMV_BLOCK_SIZE, 0, 0>>>(
-            block_num, val_out,
-            row_out,
-            y,
-            1, alpha);
+        // merge_path_reduce<<<1, SPMV_BLOCK_SIZE, 0, 0>>>(
+        //     block_num, val_out,
+        //     row_out,
+        //     y,
+        //     1, alpha);
         // GPU_TIMER_END(elapsed_time2, event_start2, event_stop2);
         // printf("compute_time2:%f ms\n", elapsed_time2);
     }

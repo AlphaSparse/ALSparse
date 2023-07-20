@@ -351,16 +351,6 @@ __global__ __launch_bounds__(spmv_block_size) void abstract_load_balance_spmv(
         warps_in_block, warp_size);
 }
 
-template <typename T, typename V, typename W>
-__global__ void array_scale(T m, V *array, W beta)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < m)
-    {
-        array[idx] *= beta;
-    }
-}
-
 template <typename T, typename U, typename V, typename W>
 static void load_balance_spmv(const T m,
                               const T n,
