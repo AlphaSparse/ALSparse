@@ -2,7 +2,6 @@
 
 #include "alphasparse.h"
 #include "alphasparse_spmv_coo.h"
-#include <cooperative_groups.h>
 #include <cstdint>
 
 #define ITEMS_PER_THREAD 8
@@ -83,13 +82,15 @@ __device__ void merge_path_spmv(
     T *shared_col_idxs = reinterpret_cast<T *>(shared_row_ptrs + block_num_rows);
     U *shared_val = reinterpret_cast<U *>(shared_col_idxs + block_num_nonzeros);
 
+    // 66511.4
     for (int i = threadIdx.x;
          i < block_num_rows && block_start_x + i < num_rows;
          i += SPMV_MERGE_BLOCK_SIZE)
     {
         shared_row_ptrs[i] = row_end_ptrs[block_start_x + i];
     }
-    // 763513
+
+    // 995359.6
     for (int i = threadIdx.x;
          i < block_num_nonzeros && block_start_y + i < nnz;
          i += SPMV_MERGE_BLOCK_SIZE)
@@ -97,17 +98,19 @@ __device__ void merge_path_spmv(
         shared_val[i] = val[block_start_y + i];
         shared_col_idxs[i] = col_idxs[block_start_y + i];
     }
+
     cooperative_groups::thread_block g = cooperative_groups::this_thread_block();
     g.sync();
 
     T start_x;
     T start_y;
-    // 280098.5
+
+    // 266012.4
     merge_path_search(IPT * threadIdx.x, block_num_rows,
                       block_num_nonzeros, shared_row_ptrs, block_start_y,
                       &start_x, &start_y);
 
-    // 1316374.3
+    // 1291546.2
     T ind = block_start_y + start_y;
     T row_i = block_start_x + start_x;
     U value = U{};
@@ -129,8 +132,10 @@ __device__ void merge_path_spmv(
         }
     }
     g.sync();
-    const cooperative_groups::thread_block_tile<32> tile_block =
-        cooperative_groups::tiled_partition<32>(g);
+
+    // 140647.7
+    const cooperative_groups::thread_block_tile<WARP_SIZE> tile_block =
+        cooperative_groups::tiled_partition<WARP_SIZE>(g);
     bool head = segment_scan<WARP_SIZE>(tile_block, row_i, value);
     if (head)
     {

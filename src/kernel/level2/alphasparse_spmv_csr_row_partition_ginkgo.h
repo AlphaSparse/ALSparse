@@ -1,9 +1,7 @@
 #pragma once
 
-#include <cooperative_groups.h>
 #include "alphasparse.h"
 #include "alphasparse_spmv_csr_vector.h"
-#include <thrust/scan.h>
 
 constexpr int spmv_block_size = 128;
 
