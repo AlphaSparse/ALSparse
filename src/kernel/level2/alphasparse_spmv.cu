@@ -198,12 +198,12 @@ alphasparseSpMV(alphasparseHandle_t handle,
     return spmv_template<int32_t, half, half, float>(
         handle, opA, alpha, matA, vecX, beta, vecY, alg, externalBuffer);
   }
-  if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
-      matA->data_type == ALPHA_C_16F && vecY->data_type == ALPHA_C_16F)
-  {
-    return spmv_template<int32_t, half2, half2, cuFloatComplex>(
-        handle, opA, alpha, matA, vecX, beta, vecY, alg, externalBuffer);
-  }
+  // if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
+  //     matA->data_type == ALPHA_C_16F && vecY->data_type == ALPHA_C_16F)
+  // {
+  //   return spmv_template<int32_t, half2, half2, cuFloatComplex>(
+  //       handle, opA, alpha, matA, vecX, beta, vecY, alg, externalBuffer);
+  // }
   if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
       matA->data_type == ALPHA_R_8I && vecY->data_type == ALPHA_R_32I)
   {
@@ -287,7 +287,7 @@ alphasparseSpMV_bufferSize(alphasparseHandle_t handle,
   {
     const int total = matA->rows + matA->nnz;
     const int block_num =
-        ceildiv(total, SPMV_BLOCK_SIZE * 8);
+        ceildivT(total, SPMV_BLOCK_SIZE * 8);
     size_t typeSize = 4;
     if (computeType == ALPHA_R_32F)
       typeSize = 4;

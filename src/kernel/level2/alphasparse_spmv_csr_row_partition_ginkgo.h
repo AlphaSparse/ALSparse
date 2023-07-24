@@ -91,7 +91,7 @@ T clac_size(const T nnz, const T warp_size, const T nwarps_)
             multiple = 32;
         }
         auto nwarps = nwarps_ * multiple;
-        return min(ceildiv((int64_t)nnz, (int64_t)warp_size), (int64_t)nwarps);
+        return min(ceildivT((int64_t)nnz, (int64_t)warp_size), (int64_t)nwarps);
     }
     else
     {
@@ -214,35 +214,6 @@ __device__ __forceinline__ void process_window(
     }
 }
 
-template <unsigned subwarp_size = 16, typename ValueType, typename IndexType,
-          typename Operator>
-__device__ __forceinline__ bool segment_scan(
-    const cooperative_groups::thread_block_tile<subwarp_size> &group, const IndexType ind,
-    ValueType &val, Operator op)
-{
-    bool head = true;
-#pragma unroll
-    for (int i = 1; i < subwarp_size; i <<= 1)
-    {
-        const IndexType add_ind = group.shfl_up(ind, i);
-        ValueType add_val{};
-        if (add_ind == ind && group.thread_rank() >= i)
-        {
-            add_val = val;
-            if (i == 1)
-            {
-                head = false;
-            }
-        }
-        add_val = group.shfl_down(add_val, i);
-        if (group.thread_rank() < subwarp_size - i)
-        {
-            val = op(val, add_val);
-        }
-    }
-    return head;
-}
-
 template <unsigned subwarp_size, typename ValueType1, typename ValueType2, typename IndexType,
           typename Closure>
 __device__ __forceinline__ void warp_atomic_add(
@@ -251,9 +222,8 @@ __device__ __forceinline__ void warp_atomic_add(
     Closure scale)
 {
     // do a local scan to avoid atomic collisions
-    const bool need_write = segment_scan(
-        group, row, val, [](ValueType1 a, ValueType1 b)
-        { return a + b; });
+    const bool need_write = segment_scan<subwarp_size>(
+        group, row, val);
     if (need_write && force_write)
     {
         atomicAdd(&(c[row]), scale(val));
@@ -270,16 +240,6 @@ __device__ __forceinline__ IndexType get_warp_start_idx(
 {
     const long long cache_lines = ceildivT<IndexType>(nnz, warp_size);
     return (warp_idx * cache_lines / nwarps) * warp_size;
-}
-
-using cooperative_groups::this_thread_block;
-using cooperative_groups::thread_block_tile;
-
-template <unsigned Size, typename Group>
-__device__ __forceinline__ thread_block_tile<Size, void> tiled_partition(
-    Group &g)
-{
-    return cooperative_groups::tiled_partition<Size>(g);
 }
 
 template <typename T, typename U, typename V, typename Closure>
@@ -380,7 +340,7 @@ static void load_balance_spmv(const T m,
     if (nwarps > 0)
     {
         const dim3 csr_block(warp_size, warps_in_block, 1);
-        const dim3 csr_grid(ceildiv((int64_t)nwarps, (int64_t)warps_in_block), 1);
+        const dim3 csr_grid(ceildivT((int64_t)nwarps, (int64_t)warps_in_block), 1);
         if (csr_grid.x > 0 && csr_grid.y > 0)
         {
             T *srow_device = srow;

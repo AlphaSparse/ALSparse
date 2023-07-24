@@ -11,71 +11,6 @@
 // cudaEvent_t event_start2, event_stop2;
 // float elapsed_time2 = 0.0;
 
-inline constexpr int64_t ceildiv(int64_t num, int64_t den)
-{
-    return (num + den - 1) / den;
-}
-
-template <typename T, typename V, typename W>
-__global__ void array_scale(T m, V *array, W beta)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < m)
-    {
-        array[idx] *= beta;
-    }
-}
-
-template <unsigned subwarp_size = 32, typename ValueType, typename IndexType>
-__device__ __forceinline__ bool segment_scan2(
-    const cooperative_groups::thread_block_tile<subwarp_size> &group,
-    const IndexType ind,
-    ValueType &val)
-{
-    bool head = true;
-#pragma unroll
-    for (int i = 1; i < subwarp_size; i <<= 1)
-    {
-        const IndexType add_ind = group.shfl_up(ind, i);
-        ValueType add_val{};
-        if (add_ind == ind && group.thread_rank() >= i)
-        {
-            add_val = val;
-            if (i == 1)
-            {
-                head = false;
-            }
-        }
-        add_val = group.shfl_down(add_val, i);
-        if (group.thread_rank() < subwarp_size - i)
-        {
-            val += add_val;
-        }
-    }
-    return head;
-}
-
-template <unsigned subwarp_size, typename ValueType1, typename ValueType2, typename IndexType,
-          typename Closure>
-__device__ __forceinline__ void warp_atomic_add2(
-    const cooperative_groups::thread_block_tile<subwarp_size> &group, bool force_write,
-    ValueType1 &val, const IndexType row, ValueType2 *__restrict__ c,
-    Closure scale)
-{
-    // do a local scan to avoid atomic collisions
-    const bool need_write = segment_scan2(
-        group, row, val, [](ValueType1 a, ValueType1 b)
-        { return a + b; });
-    if (need_write && force_write)
-    {
-        atomicAdd(&(c[row]), scale(val));
-    }
-    if (!need_write || force_write)
-    {
-        val = ValueType1{};
-    }
-}
-
 template <typename T, typename U, typename V, typename W>
 static alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
                                                  T m,
@@ -88,82 +23,6 @@ static alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
                                                  const U *x,
                                                  const W beta,
                                                  V *y);
-
-template <typename T>
-__host__ __device__ __forceinline__ T ceildivT(T nom, T denom)
-{
-    return (nom + denom - 1ll) / denom;
-}
-
-template <typename ValueType, typename IndexType>
-__device__ __forceinline__ bool block_segment_scan_reverse(
-    const IndexType *__restrict__ ind, ValueType *__restrict__ val)
-{
-    bool last = true;
-    const auto reg_ind = ind[threadIdx.x];
-#pragma unroll
-    for (int i = 1; i < SPMV_BLOCK_SIZE; i <<= 1)
-    {
-        if (i == 1 && threadIdx.x < SPMV_BLOCK_SIZE - 1 &&
-            reg_ind == ind[threadIdx.x + 1])
-        {
-            last = false;
-        }
-        auto temp = ValueType{};
-        if (threadIdx.x >= i && reg_ind == ind[threadIdx.x - i])
-        {
-            temp = val[threadIdx.x - i];
-        }
-        cooperative_groups::this_thread_block().sync();
-        val[threadIdx.x] += temp;
-        cooperative_groups::this_thread_block().sync();
-    }
-    return last;
-}
-
-template <typename T, typename U, typename V, typename W>
-__global__ void merge_path_reduce(const int nwarps,
-                                  const U *__restrict__ last_val,
-                                  const T *__restrict__ last_row,
-                                  V *__restrict__ c,
-                                  const int c_stride, const W alpha)
-{
-    const int cache_lines = ceildivT<int>(nwarps, SPMV_BLOCK_SIZE);
-    const int start = min(threadIdx.x * cache_lines, nwarps);
-    const int end = min((threadIdx.x + 1) * cache_lines, nwarps);
-    U value = U{};
-    int row = last_row[nwarps - 1];
-    if (start < nwarps)
-    {
-        value = __ldg(&last_val[start]);
-        row = __ldg(&last_row[start]);
-        for (int i = start + 1; i < end; i++)
-        {
-            if (__ldg(&last_row[i]) != row)
-            {
-                c[row] += alpha * (value);
-                row = __ldg(&last_row[i]);
-                value = __ldg(&last_val[i]);
-            }
-            else
-            {
-                value += __ldg(&last_val[i]);
-            }
-        }
-    }
-    __shared__ int tmp_ind[SPMV_BLOCK_SIZE];
-    __shared__ U tmp_val[SPMV_BLOCK_SIZE];
-    tmp_val[threadIdx.x] = value;
-    tmp_ind[threadIdx.x] = row;
-    cooperative_groups::this_thread_block().sync();
-    bool last = block_segment_scan_reverse(static_cast<T *>(tmp_ind),
-                                           static_cast<U *>(tmp_val));
-    cooperative_groups::this_thread_block().sync();
-    if (last)
-    {
-        c[row] += alpha * (tmp_val[threadIdx.x]);
-    }
-}
 
 __forceinline__ __device__ void merge_path_search(
     const int diagonal, const int a_len, const int b_len,
@@ -223,19 +82,6 @@ __device__ void merge_path_spmv(
     T *shared_col_idxs = reinterpret_cast<T *>(shared_row_ptrs + block_num_rows);
     U *shared_val = reinterpret_cast<U *>(shared_col_idxs + block_num_nonzeros);
 
-    // for (int ii = 0; ii < 1; ii++)
-    // {
-    //     // 660087.5
-    //     merge_path_search(diagonal, num_rows, nnz, row_end_ptrs, 0,
-    //                       &block_start_x, &block_start_y);
-    // }
-    // for (int ii = 0; ii < 1; ii++)
-    // {
-    //     // 651453.9
-    //     merge_path_search(diagonal_end, num_rows, nnz, row_end_ptrs,
-    //                       0, &end_x, &end_y);
-    // }
-
     for (int i = threadIdx.x;
          i < block_num_rows && block_start_x + i < num_rows;
          i += SPMV_BLOCK_SIZE)
@@ -284,27 +130,11 @@ __device__ void merge_path_spmv(
     g.sync();
     const cooperative_groups::thread_block_tile<32> tile_block =
         cooperative_groups::tiled_partition<32>(g);
-    bool head = segment_scan2(tile_block, row_i, value);
+    bool head = segment_scan<WARP_SIZE>(tile_block, row_i, value);
     if (head)
     {
         atomicAdd(&c[row_i], alpha * value);
     }
-    // // 465531.2
-    // T *tmp_ind = shared_row_ptrs;
-    // U *tmp_val = reinterpret_cast<U *>(tmp_ind + SPMV_BLOCK_SIZE);
-    // tmp_val[threadIdx.x] = value;
-    // tmp_ind[threadIdx.x] = row_i;
-    // g.sync();
-    // bool last = block_segment_scan_reverse(tmp_ind, tmp_val);
-    // if (threadIdx.x == SPMV_BLOCK_SIZE - 1)
-    // {
-    //     row_out[blockIdx.x] = min(end_x, num_rows - 1);
-    //     val_out[blockIdx.x] = tmp_val[threadIdx.x];
-    // }
-    // else if (last)
-    // {
-    //     c[row_i] += alpha * tmp_val[threadIdx.x];
-    // }
 }
 
 template <typename T>
@@ -393,15 +223,15 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
     {
         return spmv_csr_scalar(handle, m, n, nnz, alpha, csr_val, csr_row_ptr, csr_col_ind, x, beta, y);
     }
-    constexpr int minimal_num =
-        ceildiv(sizeof(T) + sizeof(U), sizeof(T));
+    int minimal_num =
+        ceildivT(sizeof(T) + sizeof(U), sizeof(T));
     int items_per_thread = ITEMS_PER_THREAD * 4 / sizeof(T);
     items_per_thread = std::max(minimal_num, items_per_thread);
 
     const T num_merge_items = m + nnz;
-    const int block_items = SPMV_BLOCK_SIZE * ITEMS_PER_THREAD;
+    const T block_items = SPMV_BLOCK_SIZE * ITEMS_PER_THREAD;
     const T block_num =
-        ceildiv(num_merge_items, block_items);
+        ceildivT(num_merge_items, block_items);
 
     T *block_start_xs = reinterpret_cast<T *>(externalBuffer);
     T *block_start_ys = reinterpret_cast<T *>(block_start_xs + block_num + 1);
@@ -411,7 +241,7 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
     // printf("maxbytes:%d\n", maxbytes);
     // cudaFuncSetAttribute(abstract_merge_path_spmv<block_items, T, U, V, W>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
     const int block_size = 1024;
-    const int grid_size = ceildiv(m, block_size);
+    const int grid_size = ceildivT(m, block_size);
     if (&alpha != nullptr && &beta != nullptr)
     {
         abstract_merge_path_search<T><<<grid_size, block_size>>>(
@@ -449,14 +279,6 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
         }
         // GPU_TIMER_END(elapsed_time2, event_start2, event_stop2);
         // printf("compute_time1:%f ms\n", elapsed_time2);
-        // GPU_TIMER_START(elapsed_time2, event_start2, event_stop2);
-        // merge_path_reduce<<<1, SPMV_BLOCK_SIZE, 0, 0>>>(
-        //     block_num, val_out,
-        //     row_out,
-        //     y,
-        //     1, alpha);
-        // GPU_TIMER_END(elapsed_time2, event_start2, event_stop2);
-        // printf("compute_time2:%f ms\n", elapsed_time2);
     }
     else
     {

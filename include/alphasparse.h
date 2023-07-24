@@ -1,6 +1,7 @@
 #pragma once
 
 #include <fstream>
+#include <cooperative_groups.h>
 
 #include "alphasparse/types.h"        // basic type define
 
