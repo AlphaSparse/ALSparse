@@ -6,7 +6,8 @@
 #include <cstdint>
 
 #define ITEMS_PER_THREAD 8
-#define SPMV_BLOCK_SIZE 512
+#define SPMV_MERGE_BLOCK_SIZE 512
+#define BLOCK_SIZE 1024
 
 // cudaEvent_t event_start2, event_stop2;
 // float elapsed_time2 = 0.0;
@@ -84,14 +85,14 @@ __device__ void merge_path_spmv(
 
     for (int i = threadIdx.x;
          i < block_num_rows && block_start_x + i < num_rows;
-         i += SPMV_BLOCK_SIZE)
+         i += SPMV_MERGE_BLOCK_SIZE)
     {
         shared_row_ptrs[i] = row_end_ptrs[block_start_x + i];
     }
     // 763513
     for (int i = threadIdx.x;
          i < block_num_nonzeros && block_start_y + i < nnz;
-         i += SPMV_BLOCK_SIZE)
+         i += SPMV_MERGE_BLOCK_SIZE)
     {
         shared_val[i] = val[block_start_y + i];
         shared_col_idxs[i] = col_idxs[block_start_y + i];
@@ -138,7 +139,7 @@ __device__ void merge_path_spmv(
 }
 
 template <typename T>
-__global__ __launch_bounds__(1024) void abstract_merge_path_search(
+__global__ __launch_bounds__(BLOCK_SIZE) void abstract_merge_path_search(
     T *block_start_xs,
     T *block_start_ys,
     T num_rows,
@@ -158,7 +159,7 @@ __global__ __launch_bounds__(1024) void abstract_merge_path_search(
 }
 
 template <int block_items, typename T, typename U, typename V, typename W>
-__global__ __launch_bounds__(SPMV_BLOCK_SIZE) void abstract_merge_path_spmv(
+__global__ __launch_bounds__(SPMV_MERGE_BLOCK_SIZE) void abstract_merge_path_spmv(
     int items_per_thread,
     const T num_rows,
     const T nnz,
@@ -229,7 +230,7 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
     items_per_thread = std::max(minimal_num, items_per_thread);
 
     const T num_merge_items = m + nnz;
-    const T block_items = SPMV_BLOCK_SIZE * ITEMS_PER_THREAD;
+    const T block_items = SPMV_MERGE_BLOCK_SIZE * ITEMS_PER_THREAD;
     const T block_num =
         ceildivT(num_merge_items, block_items);
 
@@ -240,11 +241,9 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
     int maxbytes = block_items * (sizeof(U) + sizeof(T));
     // printf("maxbytes:%d\n", maxbytes);
     // cudaFuncSetAttribute(abstract_merge_path_spmv<block_items, T, U, V, W>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
-    const int block_size = 1024;
-    const int grid_size = ceildivT(m, block_size);
     if (&alpha != nullptr && &beta != nullptr)
     {
-        abstract_merge_path_search<T><<<grid_size, block_size>>>(
+        abstract_merge_path_search<T><<<ceildivT(block_num, BLOCK_SIZE), BLOCK_SIZE>>>(
             block_start_xs,
             block_start_ys,
             m,
@@ -256,8 +255,8 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
         // GPU_TIMER_START(elapsed_time2, event_start2, event_stop2);
         if (block_num > 0)
         {
-            array_scale<<<grid_size, block_size>>>(m, y, beta);
-            abstract_merge_path_spmv<block_items><<<block_num, SPMV_BLOCK_SIZE, maxbytes, 0>>>(
+            array_scale<<<ceildivT(m, BLOCK_SIZE), BLOCK_SIZE>>>(m, y, beta);
+            abstract_merge_path_spmv<block_items><<<block_num, SPMV_MERGE_BLOCK_SIZE, maxbytes, 0>>>(
                 items_per_thread,
                 m,
                 nnz,
@@ -288,4 +287,5 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
     return ALPHA_SPARSE_STATUS_SUCCESS;
 }
 
+#undef BLOCK_SIZE
 #undef ITEMS_PER_THREAD

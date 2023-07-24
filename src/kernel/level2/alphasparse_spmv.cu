@@ -287,7 +287,7 @@ alphasparseSpMV_bufferSize(alphasparseHandle_t handle,
   {
     const int total = matA->rows + matA->nnz;
     const int block_num =
-        ceildivT(total, SPMV_BLOCK_SIZE * 8);
+        ceildivT(total, SPMV_MERGE_BLOCK_SIZE * 8);
     size_t typeSize = 4;
     if (computeType == ALPHA_R_32F)
       typeSize = 4;
