@@ -408,7 +408,7 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
     U *val_out = reinterpret_cast<U *>(block_start_ys + block_num + 1);
     T *row_out = reinterpret_cast<T *>(val_out + block_num);
     int maxbytes = block_items * (sizeof(U) + sizeof(T));
-    // printf("maxbytes:%d\n", maxbytes);
+    printf("maxbytes:%d\n", maxbytes);
     // cudaFuncSetAttribute(abstract_merge_path_spmv<block_items, T, U, V, W>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
     const int block_size = 1024;
     const int grid_size = ceildiv(block_num, block_size);
