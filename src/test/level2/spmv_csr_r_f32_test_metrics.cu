@@ -337,8 +337,8 @@ int main(int argc, const char *argv[])
   //   std::cout << cuda_y[i] << ", ";
   // }
   printf("\n");
-  warm_up = 100;
-  trials = 100;
+  warm_up = 0;
+  trials = 1;
   cuda_mv();
   alpha_mv();
   // std::ofstream filename(metrics_file, std::ios::app);
