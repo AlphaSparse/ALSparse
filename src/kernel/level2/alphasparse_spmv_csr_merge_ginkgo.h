@@ -224,8 +224,7 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
 
     const T num_merge_items = m + nnz;
     const T items_per_block = SPMV_MERGE_BLOCK_SIZE * ITEMS_PER_THREAD;
-    const T block_num =
-        ceildivT(num_merge_items, items_per_block);
+    const T block_num = ceildivT(num_merge_items, items_per_block);
 
     T *block_start_xs = reinterpret_cast<T *>(externalBuffer);
     T *block_start_ys = reinterpret_cast<T *>(block_start_xs + block_num + 1);
