@@ -6,9 +6,6 @@
 #define SPMV_MERGE_BLOCK_SIZE 512
 #define BLOCK_SIZE 512
 
-// cudaEvent_t event_start2, event_stop2;
-// float elapsed_time2 = 0.0;
-
 template <typename T>
 __forceinline__ __device__ void merge_path_search(
     const T diagonal, const T x_len, const T y_len,
@@ -32,7 +29,7 @@ __forceinline__ __device__ void merge_path_search(
     }
 
     *x = min(x_min, x_len);
-    *y = diagonal - x_min;
+    *y = diagonal - *x;
 }
 
 template <int items_per_block, typename T, typename U, typename V, typename W>
@@ -93,18 +90,27 @@ __device__ void merge_path_spmv(
 #pragma unroll
     for (T i = 0; i < IPT && row_i < num_rows; i++)
     {
+        // if (start_x == block_num_rows)
+        // {
+        //     printf("i:%d, tid:%d, bid:%d, y[row_i]:%f, value:%f, ind:%d, start_x:%d, start_y:%d, block_num_nnz:%d, row_i:%d, block_num_rows:%d, num_rows:%d, shared_val[start_y]:%f, shared_col_idxs[start_y]:%d, shared_row_ptrs[start_x]:%d\n",
+        //            i, threadIdx.x, blockIdx.x, y[row_i], value, ind, start_x, start_y, block_num_nnz, row_i, block_num_rows, num_rows, shared_val[start_y], shared_col_idxs[start_y], shared_row_ptrs[start_x]);
+        // }
         if (ind < shared_row_ptrs[start_x] || start_x == block_num_rows)
         {
+
             value += shared_val[start_y] * __ldg(&x[shared_col_idxs[start_y]]);
             start_y++;
             ind++;
         }
         else
         {
-            atomicAdd(&y[row_i], alpha * value);
+            if (value != U{})
+            {
+                atomicAdd(&y[row_i], alpha * value);
+                value = U{};
+            }
             start_x++;
             row_i++;
-            value = U{};
         }
     }
     g.sync();
@@ -118,7 +124,8 @@ __device__ void merge_path_spmv(
         atomicAdd(&y[row_i], alpha * value);
     }
 }
-template <typename T>
+
+template <typename T, typename V, typename W>
 __global__ __launch_bounds__(BLOCK_SIZE) void abstract_merge_path_search(
     T *block_start_xs,
     T *block_start_ys,
@@ -127,11 +134,23 @@ __global__ __launch_bounds__(BLOCK_SIZE) void abstract_merge_path_search(
     const T num_merge_items,
     const T items_per_block,
     const T block_num,
-    const T *row_end_ptrs)
+    const T *row_end_ptrs,
+    V *y,
+    W beta)
 {
     const T gid = blockIdx.x * blockDim.x + threadIdx.x;
     if (gid > block_num)
-        return;
+    {
+        if (gid < num_rows + block_num + 1)
+        {
+            y[gid - block_num - 1] *= beta;
+            return;
+        }
+        else
+        {
+            return;
+        }
+    }
     const T diagonal = min(items_per_block * gid, num_merge_items);
     merge_path_search(diagonal, num_rows, nnz, row_end_ptrs, 0,
                       &block_start_xs[gid], &block_start_ys[gid]);
@@ -213,12 +232,12 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
     U *val_out = reinterpret_cast<U *>(block_start_ys + block_num + 1);
     T *row_out = reinterpret_cast<T *>(val_out + block_num);
     const int maxbytes = items_per_block * (sizeof(U) + sizeof(T));
-    printf("block_num:%d\n", block_num);
+    // printf("block_num:%d\n", block_num);
     // printf("maxbytes:%d\n", maxbytes);
     // cudaFuncSetAttribute(abstract_merge_path_spmv<items_per_block, T, U, V, W>, cudaFuncAttributeMaxDynamicSharedMemorySize, maxbytes);
     if (&alpha != nullptr && &beta != nullptr)
     {
-        abstract_merge_path_search<T><<<ceildivT(block_num, BLOCK_SIZE), BLOCK_SIZE>>>(
+        abstract_merge_path_search<T><<<ceildivT(block_num + m + 1, BLOCK_SIZE), BLOCK_SIZE>>>(
             block_start_xs,
             block_start_ys,
             m,
@@ -226,19 +245,11 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
             num_merge_items,
             items_per_block,
             block_num,
-            csr_row_ptr + 1);
-        // T *block_start_xs_h = (T *)malloc(sizeof(T) * (block_num + 1));
-        // T *block_start_ys_h = (T *)malloc(sizeof(T) * (block_num + 1));
-        // cudaMemcpy(block_start_xs_h, block_start_xs, sizeof(T) * (block_num + 1), cudaMemcpyDeviceToHost);
-        // cudaMemcpy(block_start_ys_h, block_start_ys, sizeof(T) * (block_num + 1), cudaMemcpyDeviceToHost);
-        // for (int i = 0; i < block_num + 1; i++)
-        // {
-        //     printf("x: %d, y: %d\n", block_start_xs_h[i], block_start_ys_h[i]);
-        // }
-        // GPU_TIMER_START(elapsed_time2, event_start2, event_stop2);
+            csr_row_ptr + 1,
+            y,
+            beta);
         if (block_num > 0)
         {
-            array_scale<<<ceildivT(m, BLOCK_SIZE), BLOCK_SIZE>>>(m, y, beta);
             abstract_merge_path_spmv<items_per_block><<<block_num, SPMV_MERGE_BLOCK_SIZE, maxbytes, 0>>>(
                 items_per_thread,
                 m,
@@ -254,8 +265,6 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
                 block_start_xs,
                 block_start_ys);
         }
-        // GPU_TIMER_END(elapsed_time2, event_start2, event_stop2);
-        // printf("compute_time1:%f ms\n", elapsed_time2);
     }
     else
     {
