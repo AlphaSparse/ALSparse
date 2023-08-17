@@ -229,8 +229,6 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
 
     T *block_start_xs = reinterpret_cast<T *>(externalBuffer);
     T *block_start_ys = reinterpret_cast<T *>(block_start_xs + block_num + 1);
-    U *val_out = reinterpret_cast<U *>(block_start_ys + block_num + 1);
-    T *row_out = reinterpret_cast<T *>(val_out + block_num);
     const int maxbytes = items_per_block * (sizeof(U) + sizeof(T));
     // printf("block_num:%d\n", block_num);
     // printf("maxbytes:%d\n", maxbytes);

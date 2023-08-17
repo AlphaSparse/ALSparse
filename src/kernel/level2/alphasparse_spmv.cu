@@ -297,7 +297,7 @@ alphasparseSpMV_bufferSize(alphasparseHandle_t handle,
       typeSize = 8;
     else if (computeType == ALPHA_C_64F)
       typeSize = 16;
-    *bufferSize = (block_num * 4 + 2) * typeSize;
+    *bufferSize = (block_num * 2 + 2) * typeSize;
     break;
   }
   case ALPHA_SPARSE_SPMV_ROW_PARTITION:
