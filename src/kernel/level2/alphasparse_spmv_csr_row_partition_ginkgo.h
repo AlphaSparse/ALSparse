@@ -1,9 +1,7 @@
 #pragma once
 
-#include <cooperative_groups.h>
 #include "alphasparse.h"
 #include "alphasparse_spmv_csr_vector.h"
-#include <thrust/scan.h>
 
 constexpr int spmv_block_size = 128;
 
@@ -91,7 +89,7 @@ T clac_size(const T nnz, const T warp_size, const T nwarps_)
             multiple = 32;
         }
         auto nwarps = nwarps_ * multiple;
-        return min(ceildiv((int64_t)nnz, (int64_t)warp_size), (int64_t)nwarps);
+        return min(ceildivT((int64_t)nnz, (int64_t)warp_size), (int64_t)nwarps);
     }
     else
     {
@@ -184,33 +182,34 @@ __device__ __forceinline__ void find_next_row(
     }
 }
 
-template <unsigned subwarp_size = 16, typename ValueType, typename IndexType,
-          typename Operator>
-__device__ __forceinline__ bool segment_scan(
-    const cooperative_groups::thread_block_tile<subwarp_size> &group, const IndexType ind,
-    ValueType &val, Operator op)
+template <bool last, unsigned subwarp_size = 16,
+          typename U, typename IndexType,
+          typename V, typename Closure>
+__device__ __forceinline__ void process_window(
+    const cooperative_groups::thread_block_tile<subwarp_size> &group,
+    const IndexType num_rows, const IndexType nnz, IndexType ind,
+    IndexType &row, IndexType &row_end, IndexType &nrow, IndexType &nrow_end,
+    U &temp_val, const U *val,
+    const IndexType *__restrict__ col_idxs,
+    const IndexType *__restrict__ csr_row_ptr, const U *b,
+    V *c, Closure scale)
 {
-    bool head = true;
-#pragma unroll
-    for (int i = 1; i < subwarp_size; i <<= 1)
+    const auto curr_row = row;
+    find_next_row<last>(num_rows, nnz, ind, row, row_end, nrow, nrow_end,
+                        csr_row_ptr);
+    // segmented scan
+    if (group.any(curr_row != row))
     {
-        const IndexType add_ind = group.shfl_up(ind, i);
-        ValueType add_val{};
-        if (add_ind == ind && group.thread_rank() >= i)
-        {
-            add_val = val;
-            if (i == 1)
-            {
-                head = false;
-            }
-        }
-        add_val = group.shfl_down(add_val, i);
-        if (group.thread_rank() < subwarp_size - i)
-        {
-            val = op(val, add_val);
-        }
+        warp_atomic_add(group, curr_row != row, temp_val, curr_row, c, scale);
+        nrow = group.shfl(row, subwarp_size - 1);
+        nrow_end = group.shfl(row_end, subwarp_size - 1);
     }
-    return head;
+
+    if (!last || ind < nnz)
+    {
+        const auto col = col_idxs[ind];
+        temp_val += val[ind] * b[col];
+    }
 }
 
 template <unsigned subwarp_size, typename ValueType1, typename ValueType2, typename IndexType,
@@ -221,9 +220,8 @@ __device__ __forceinline__ void warp_atomic_add(
     Closure scale)
 {
     // do a local scan to avoid atomic collisions
-    const bool need_write = segment_scan(
-        group, row, val, [](ValueType1 a, ValueType1 b)
-        { return a + b; });
+    const bool need_write = segment_scan<subwarp_size>(
+        group, row, val);
     if (need_write && force_write)
     {
         atomicAdd(&(c[row]), scale(val));
@@ -270,16 +268,6 @@ __device__ __forceinline__ IndexType get_warp_start_idx(
 {
     const long long cache_lines = ceildivT<IndexType>(nnz, warp_size);
     return (warp_idx * cache_lines / nwarps) * warp_size;
-}
-
-using cooperative_groups::this_thread_block;
-using cooperative_groups::thread_block_tile;
-
-template <unsigned Size, typename Group>
-__device__ __forceinline__ thread_block_tile<Size, void> tiled_partition(
-    Group &g)
-{
-    return cooperative_groups::tiled_partition<Size>(g);
 }
 
 template <typename T, typename U, typename V, typename Closure>
@@ -351,16 +339,6 @@ __global__ __launch_bounds__(spmv_block_size) void abstract_load_balance_spmv(
         warps_in_block, warp_size);
 }
 
-template <typename T, typename V, typename W>
-__global__ void array_scale(T m, V *array, W beta)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < m)
-    {
-        array[idx] *= beta;
-    }
-}
-
 template <typename T, typename U, typename V, typename W>
 static void load_balance_spmv(const T m,
                               const T n,
@@ -390,7 +368,7 @@ static void load_balance_spmv(const T m,
     if (nwarps > 0)
     {
         const dim3 csr_block(warp_size, warps_in_block, 1);
-        const dim3 csr_grid(ceildiv((int64_t)nwarps, (int64_t)warps_in_block), 1);
+        const dim3 csr_grid(ceildivT((int64_t)nwarps, (int64_t)warps_in_block), 1);
         if (csr_grid.x > 0 && csr_grid.y > 0)
         {
             T *srow_device = srow;
@@ -419,7 +397,8 @@ alphasparseStatus_t spmv_csr_load(alphasparseHandle_t handle,
                                   const T *csr_col_ind,
                                   const U *x,
                                   const W beta,
-                                  V *y)
+                                  V *y,
+                                  void *externalBuffer)
 {
     const T SM = 80;
     const T MAX_WARP_PER_SM = 64;
@@ -449,20 +428,14 @@ alphasparseStatus_t spmv_csr_load(alphasparseHandle_t handle,
     // auto end_time = std::chrono::high_resolution_clock::now();
     // auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
     // std::cout << "balanced time: " << duration.count() << " nanoseconds" << std::endl;
-    T *partition;
-    cudaMalloc((void **)&partition, (nwarps) * sizeof(T));
+    T *partition = (T *)externalBuffer;
     const int64_t ave = ceildivT<int64_t>(nnz, warp_size);
 
-    cudaEvent_t event_start, event_stop;
-    float elapsed_time = 0.0;
-    GPU_TIMER_START(elapsed_time, event_start, event_stop);
     balanced_partition_row_by_nnz<T, warp_size><<<dim3(GRIDSIZE), dim3(BLOCK_SIZE), 0, handle->stream>>>(csr_row_ptr + 1, m - 1, nwarps, partition, ave);
     load_balance_spmv(m, n, nnz, alpha, partition, csr_row_ptr,
                       csr_col_ind, csr_val, x, beta, y,
                       nwarps, warp_size, warps_in_block);
     cudaDeviceSynchronize();
-    GPU_TIMER_END(elapsed_time, event_start, event_stop);
-    printf("load balance spmv time: %lf\n", elapsed_time);
 
     return ALPHA_SPARSE_STATUS_SUCCESS;
 }

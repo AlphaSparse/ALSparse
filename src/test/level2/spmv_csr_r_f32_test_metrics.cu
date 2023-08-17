@@ -44,7 +44,7 @@ const float alpha = 2.1f;
 const float beta = 3.2f;
 
 std::vector<double> cuda_time_list, alpha_time_list, cuda_bandwidth_list, alpha_bandwidth_list, cuda_gflops_list, alpha_gflops_list;
-std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT};
+std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT, CUSPARSE_SPMV_CSR_ALG1, CUSPARSE_SPMV_CSR_ALG2};
 std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ALG_MERGE};
 // std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT};
 // std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ADAPTIVE};
@@ -101,7 +101,7 @@ cuda_mv()
                                    CUDA_R_32F));
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
-  std::cout << "cusparseCreateCsr: " << duration.count() << " nanoseconds" << std::endl;
+  std::cout << "cusparseCreateCsr: " << duration.count() << " ns" << std::endl;
 
   size_t bufferSize = 0;
   void *dBuffer = NULL;
@@ -163,7 +163,7 @@ cuda_mv()
       times.push_back(elapsed_time);
     }
     double time = get_avg_time(times);
-    printf("\ncusparse: %lf ms\n", time);
+    printf("cusparse %d: %lf ms\n", alg, time);
     double bandwidth = static_cast<double>(sizeof(float)) * (2 * m + nnz) + sizeof(int) * (m + 1 + nnz) / time / 1e6;
     double gflops = static_cast<double>(2 * nnz) / time / 1e6;
     cuda_time_list.push_back(time);
@@ -235,7 +235,7 @@ alpha_mv()
                        ALPHA_R_32F);
   auto end_time = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
-  std::cout << "alphasparseCreateCsr: " << duration.count() << " nanoseconds" << std::endl;
+  std::cout << "alphasparseCreateCsr: " << duration.count() << " ns" << std::endl;
 
   void *dBuffer = NULL;
   size_t bufferSize = 0;
@@ -286,7 +286,7 @@ alpha_mv()
       times.push_back(elapsed_time);
     }
     double time = get_avg_time(times);
-    printf("alphasparse: %lf ms\n", time);
+    printf("alphasparse %d: %lf ms\n", alg, time);
     // double bandwidth = static_cast<double>(sizeof(float)) * (2 * m + nnz) + sizeof(int) * (m + 1 + nnz) / time / 1e6;
     // double gflops = static_cast<double>(2 * nnz) / time / 1e6;
     // alpha_time_list.push_back(time);
@@ -327,18 +327,18 @@ int main(int argc, const char *argv[])
   alpha_fill_random(x_val, 2, n);
   alpha_fill_random(ict_y, 1, m);
   alpha_fill_random(cuda_y, 1, m);
-  for (int i = 0; i < 20; i++)
-  {
-    std::cout << ict_y[i] << ", ";
-  }
-  std::cout << std::endl;
-  for (int i = 0; i < 20; i++)
-  {
-    std::cout << cuda_y[i] << ", ";
-  }
+  // for (int i = 0; i < 20; i++)
+  // {
+  //   std::cout << ict_y[i] << ", ";
+  // }
+  // std::cout << std::endl;
+  // for (int i = 0; i < 20; i++)
+  // {
+  //   std::cout << cuda_y[i] << ", ";
+  // }
   printf("\n");
-  warm_up = 0;
-  trials = 1;
+  warm_up = 100;
+  trials = 100;
   cuda_mv();
   alpha_mv();
   // std::ofstream filename(metrics_file, std::ios::app);
@@ -353,23 +353,23 @@ int main(int argc, const char *argv[])
   //   filename << "Results:TEST Mat=" << file << ",time=" << alpha_time_list[i] << ",Perf=" << alpha_gflops_list[i] << "\n";
   // }
   // filename.close();
-  for (int i = 0; i < 20; i++)
-  {
-    std::cout << ict_y[i] - 1 << ", ";
-  }
-  std::cout << std::endl;
-  for (int i = 0; i < 20; i++)
-  {
-    std::cout << cuda_y[i] - 1 << ", ";
-  }
-  std::cout << std::endl;
+  // for (int i = 0; i < 20; i++)
+  // {
+  //   std::cout << ict_y[i] - 1 << ", ";
+  // }
+  // std::cout << std::endl;
+  // for (int i = 0; i < 20; i++)
+  // {
+  //   std::cout << cuda_y[i] - 1 << ", ";
+  // }
+  // std::cout << std::endl;
   // for (int i = 0; i < m; i++)
   // {
-  //   if (fabs(cuda_y[i] - ict_y[i]) > 8192)
-  //   {
-  //     std::cout << "error: " << i << "," << ict_y[i] << "," << cuda_y[i] << "," << cuda_y[i] - ict_y[i] << std::endl;
-  //   }
+  //   if (fabs(cuda_y[i] - ict_y[i]) / ict_y[i] > 1e-4)
+  //     std::cout << std::fixed << std::setprecision(6) << cuda_y[i] << "," << ict_y[i] << "\n";
   // }
+  // std::cout << std::endl;
+
   check((float *)cuda_y, m, (float *)ict_y, m);
   return 0;
 }

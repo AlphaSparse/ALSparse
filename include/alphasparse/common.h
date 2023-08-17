@@ -303,3 +303,58 @@ __device__ __forceinline__ cuDoubleComplex wfreduce_min(cuDoubleComplex min_)
       exit(-1);                                                      \
     }                                                                \
   }
+
+using cooperative_groups::this_thread_block;
+using cooperative_groups::thread_block_tile;
+
+template <unsigned Size, typename Group>
+__device__ __forceinline__ thread_block_tile<Size, void> tiled_partition(
+    Group &g)
+{
+  return cooperative_groups::tiled_partition<Size>(g);
+}
+
+template <unsigned subwarp_size = 32, typename ValueType, typename IndexType>
+__device__ __forceinline__ bool segment_scan(
+    const cooperative_groups::thread_block_tile<subwarp_size> &group,
+    const IndexType ind,
+    ValueType &val)
+{
+  bool head = true;
+#pragma unroll
+  for (int i = 1; i < subwarp_size; i <<= 1)
+  {
+    const IndexType add_ind = group.shfl_up(ind, i);
+    ValueType add_val{};
+    if (add_ind == ind && group.thread_rank() >= i)
+    {
+      add_val = val;
+      if (i == 1)
+      {
+        head = false;
+      }
+    }
+    add_val = group.shfl_down(add_val, i);
+    if (group.thread_rank() < subwarp_size - i)
+    {
+      val += add_val;
+    }
+  }
+  return head;
+}
+
+template <typename T, typename V, typename W>
+__global__ void array_scale(T m, V *array, W beta)
+{
+  int idx = blockIdx.x * blockDim.x + threadIdx.x;
+  if (idx < m)
+  {
+    array[idx] *= beta;
+  }
+}
+
+template <typename T>
+__host__ __device__ __forceinline__ T ceildivT(const T nom, const T denom)
+{
+  return (nom + denom - 1ll) / denom;
+}

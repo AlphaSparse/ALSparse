@@ -29,7 +29,7 @@ __launch_bounds__(BLOCK_SIZE)
         row_end = csr_row_ptr[row + 1];
 
         V sum = {};
-        if (WF_SIZE == 16 && row_end - row_start > 16)
+        if (WF_SIZE >= 16 && row_end - row_start > 16)
         {
             // ensure aligned memory access to csr_col_ind and csr_val
             T j = row_start - (row_start & (WF_SIZE - 1)) + lid;
@@ -98,7 +98,7 @@ __launch_bounds__(BLOCK_SIZE)
         row_start = row_offset[row];
         row_end = row_offset[row + 1];
         V sum = V{};
-        if (WF_SIZE == 16 && row_end - row_start > 16)
+        if (WF_SIZE >= 16 && row_end - row_start > WF_SIZE)
         {
             // ensure aligned memory access to csr_col_ind and csr_val
             T j = row_start - (row_start & (WF_SIZE - 1)) + lid;

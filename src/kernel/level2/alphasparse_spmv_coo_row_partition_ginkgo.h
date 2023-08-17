@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cooperative_groups.h>
 #include "alphasparse.h"
 #include "alphasparse_spmv_csr_vector.h"
 #include <thrust/scan.h>
@@ -69,9 +68,7 @@ __device__ void coo_spmv_ginkgo_kernel(const IndexType warp_size,
         if (tile_block.any(curr_row != next_row))
         {
             bool is_first_in_segment = segment_scan<subwarp_size>(
-                tile_block, curr_row, temp_val,
-                [](ValueType a, ValueType b)
-                { return a + b; });
+                tile_block, curr_row, temp_val);
             if (is_first_in_segment)
             {
                 atomicAdd(&(c[curr_row + column_id]),
@@ -88,9 +85,7 @@ __device__ void coo_spmv_ginkgo_kernel(const IndexType warp_size,
                                 : ValueType{};
         // segmented scan
         bool is_first_in_segment = segment_scan<subwarp_size>(
-            tile_block, curr_row, temp_val,
-            [](ValueType a, ValueType b)
-            { return a + b; });
+            tile_block, curr_row, temp_val);
         if (is_first_in_segment)
         {
             atomicAdd(&(c[curr_row + column_id]), scale(temp_val));
