@@ -184,36 +184,6 @@ __device__ __forceinline__ void find_next_row(
     }
 }
 
-template <bool last, unsigned subwarp_size = 16,
-          typename U, typename IndexType,
-          typename V, typename Closure>
-__device__ __forceinline__ void process_window(
-    const cooperative_groups::thread_block_tile<subwarp_size> &group,
-    const IndexType num_rows, const IndexType nnz, IndexType ind,
-    IndexType &row, IndexType &row_end, IndexType &nrow, IndexType &nrow_end,
-    U &temp_val, const U *val,
-    const IndexType *__restrict__ col_idxs,
-    const IndexType *__restrict__ csr_row_ptr, const U *b,
-    V *c, Closure scale)
-{
-    const auto curr_row = row;
-    find_next_row<last>(num_rows, nnz, ind, row, row_end, nrow, nrow_end,
-                        csr_row_ptr);
-    // segmented scan
-    if (group.any(curr_row != row))
-    {
-        warp_atomic_add(group, curr_row != row, temp_val, curr_row, c, scale);
-        nrow = group.shfl(row, subwarp_size - 1);
-        nrow_end = group.shfl(row_end, subwarp_size - 1);
-    }
-
-    if (!last || ind < nnz)
-    {
-        const auto col = col_idxs[ind];
-        temp_val += val[ind] * b[col];
-    }
-}
-
 template <unsigned subwarp_size = 16, typename ValueType, typename IndexType,
           typename Operator>
 __device__ __forceinline__ bool segment_scan(
@@ -261,6 +231,36 @@ __device__ __forceinline__ void warp_atomic_add(
     if (!need_write || force_write)
     {
         val = ValueType1{};
+    }
+}
+
+template <bool last, unsigned subwarp_size = 16,
+          typename U, typename IndexType,
+          typename V, typename Closure>
+__device__ __forceinline__ void process_window(
+    const cooperative_groups::thread_block_tile<subwarp_size> &group,
+    const IndexType num_rows, const IndexType nnz, IndexType ind,
+    IndexType &row, IndexType &row_end, IndexType &nrow, IndexType &nrow_end,
+    U &temp_val, const U *val,
+    const IndexType *__restrict__ col_idxs,
+    const IndexType *__restrict__ csr_row_ptr, const U *b,
+    V *c, Closure scale)
+{
+    const auto curr_row = row;
+    find_next_row<last>(num_rows, nnz, ind, row, row_end, nrow, nrow_end,
+                        csr_row_ptr);
+    // segmented scan
+    if (group.any(curr_row != row))
+    {
+        warp_atomic_add(group, curr_row != row, temp_val, curr_row, c, scale);
+        nrow = group.shfl(row, subwarp_size - 1);
+        nrow_end = group.shfl(row_end, subwarp_size - 1);
+    }
+
+    if (!last || ind < nnz)
+    {
+        const auto col = col_idxs[ind];
+        temp_val += val[ind] * b[col];
     }
 }
 

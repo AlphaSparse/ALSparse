@@ -52,6 +52,13 @@ alphasparseStatus_t
 initHandle(alphasparseHandle_t* handle)
 {
   *handle = (alphasparseHandle_t)alpha_malloc(sizeof(alphasparse_handle));
+
+  int gpu_count = -1;
+  cudaGetDeviceCount(&gpu_count);
+
+  // if(gpu_count >= 1) (*handle)->device = 1;
+  (*handle)->device = 0;
+
   (*handle)->stream = 0;
   for (int i = 0; i < 6; i++) {
       cudaStreamCreate(&(*handle)->streams[i]);
@@ -70,7 +77,11 @@ alphasparseGetHandle(alphasparseHandle_t* handle)
   // Default device is active device
   if ((*handle) == nullptr)
     initHandle(handle);
-  THROW_IF_CUDA_ERROR(cudaGetDevice(&(*handle)->device));
+  // THROW_IF_CUDA_ERROR(cudaGetDevice(&(*handle)->device));
+  THROW_IF_CUDA_ERROR(cudaSetDevice((*handle)->device));
+  // int device_id;
+  // cudaGetDevice(&device_id);
+  // std::cout << "device id: " << device_id << std::endl;
   THROW_IF_CUDA_ERROR(
     cudaGetDeviceProperties(&(*handle)->properties, (*handle)->device));
   // Device wavefront size

@@ -204,10 +204,7 @@ void MultiplyspECKImplementation(
 {
     int maxStaticSharedMemoryPerBlock = handle->properties.sharedMemPerBlock;
     int maxDynamicSharedMemoryPerBlock = std::max(handle->properties.sharedMemPerBlockOptin, handle->properties.sharedMemPerBlock);
-
-    // those matrices automatically deallocate memory when used as param for cuda -> therefore i have written a new struct without deallocs
-    // dCSRNoDealloc<DataType> matA(matA_Dealloc), matB(matB_Dealloc);
-
+    // size_t buffer_size = 0;
     if (matB->cols > 1 << 27)
     {
         printf("ERROR: matrix B has more than %d columns (%lu)\n", 1 << 27, matB->cols);
@@ -299,18 +296,6 @@ void MultiplyspECKImplementation(
     CUstream stream = handle->streams[0];
     auto &streams = handle->streams;
 
-    // Allocate memory for offsets
-    // CU::unique_ptr newmat_offsets;
-    // if (matOut.rows != matA->rows)
-    // {
-    //     newmat_offsets = CU::allocMemory((matA->rows + 1) * sizeof(IndexType));
-    // }
-    // else if (matOut.row_offsets != nullptr)
-    // {
-    //     newmat_offsets.consume(reinterpret_cast<CUdeviceptr>(matOut.row_offsets));
-    //     matOut.row_offsets = nullptr;
-    // }
-
     IndexType *blockStartRowsScale = nullptr;
     IndexType *blockCounterScale = nullptr;
     IndexType h_blockCounterScaleNumeric[kernelCountNumeric] = {0};
@@ -347,9 +332,10 @@ void MultiplyspECKImplementation(
         d_combined_pointers_size += sizeof(uint32_t) * matA->rows;
 
     HANDLE_ERROR(cudaMalloc(&d_combined_pointers, d_combined_pointers_size));
-    // d_combined_pointers = (uint32_t *)externalBuffer2;
-    // externalBuffer2 += d_combined_pointers_size;
+    d_combined_pointers = (uint32_t *)externalBuffer2;
+    externalBuffer2 += d_combined_pointers_size;
     HANDLE_ERROR(cudaMemsetAsync(d_combined_pointers, 0, d_combined_pointers_size));
+    // buffer_size += d_combined_pointers_size;
     // printf("d_combined_pointers_size %d\n",d_combined_pointers_size);
     d_maxElementsPerRow = d_combined_pointers;
     /* keep this order */
@@ -457,14 +443,14 @@ void MultiplyspECKImplementation(
     if (useLoadBalancingCounting)
     {
         size_t combinedBlockStartSize = sizeof(IndexType) * (1 + kernelCountCounting + matA->rows * (1 + actualKernelCount));
-        // d_blockStartRows = (IndexType *)externalBuffer2;
-        // externalBuffer2 += combinedBlockStartSize;
+        d_blockStartRows = (IndexType *)externalBuffer2;
+        externalBuffer2 += combinedBlockStartSize;
         // printf("combinedBlockStartSize %d\n",combinedBlockStartSize);
-        HANDLE_ERROR(cudaMalloc(&d_blockStartRows, combinedBlockStartSize));
+        // HANDLE_ERROR(cudaMalloc(&d_blockStartRows, combinedBlockStartSize));
         blockStartRowsScale = &d_blockStartRows[matA->rows + 1];
         blockCounterScale = &blockStartRowsScale[actualKernelCount * matA->rows];
         HANDLE_ERROR(cudaMemset(blockCounterScale, 0, sizeof(IndexType) * kernelCountCounting));
-
+        // buffer_size += combinedBlockStartSize;
         // load balance over amount of operations per row in A
         spgemm.h_AssignHashSpGEMMBlocksToRowsOfSameSizeOperations<uint32_t, DataType, uint8_t, kernelCountCounting>(
             matA, matB, d_rowOperations, blockStartRowsScale, blockCounterScale, h_blockCounterScaleCounting, d_blockStartRows,
@@ -513,18 +499,18 @@ void MultiplyspECKImplementation(
             if (longestRowALength == 0)
             {
                 uint32_t *d_longestRowALength = nullptr;
-                // d_longestRowALength = (uint32_t *)externalBuffer2;
-                // externalBuffer2 += sizeof(uint32_t);
-                HANDLE_ERROR(cudaMalloc(&d_longestRowALength, sizeof(uint32_t)));
+                d_longestRowALength = (uint32_t *)externalBuffer2;
+                externalBuffer2 += sizeof(uint32_t);
+                // HANDLE_ERROR(cudaMalloc(&d_longestRowALength, sizeof(uint32_t)));
                 HANDLE_ERROR(cudaMemset(d_longestRowALength, 0, sizeof(uint32_t)));
-
+                // buffer_size += sizeof(uint32_t);
                 const uint32_t blockdim = 256;
                 const uint32_t rowsPerThread = 2;
                 const uint32_t blocks = divup(uint32_t(matA->rows), blockdim * rowsPerThread);
                 getLongestRowA<IndexType, blockdim, rowsPerThread><<<blocks, blockdim>>>((IndexType*)matA->row_data, d_longestRowALength, (IndexType)matA->rows, (IndexType)matA->nnz);
                 cudaMemcpy(&longestRowALength, d_longestRowALength, sizeof(uint32_t), cudaMemcpyDeviceToHost);
             }
-            //buffer size is set before
+            
             // only use global maps if the row cursors can't be held in shared memory
             if (elementsPerMap * 2 > warpsCounting * entriesPerWarpCounting)
             {
@@ -544,7 +530,7 @@ void MultiplyspECKImplementation(
             }
         }
     }
-
+    // printf("buffer_size %d\n", buffer_size);
     if (supportGlobalFallback)
     {
         HANDLE_ERROR(cudaMalloc(&hashMaps, globalMapMaxSize * hashMapCount));
@@ -727,7 +713,7 @@ void MultiplyspECKImplementation(
     // -------------------------------------------------------------------------------------------------------------------------------------------
 
     uint32_t maxElementsPerRow = maxRowLength;
-    cudaMemcpy(&maxElementsPerRow, d_maxElementsPerRow, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    HANDLE_ERROR(cudaMemcpy(&maxElementsPerRow, d_maxElementsPerRow, sizeof(uint32_t), cudaMemcpyDeviceToHost));
     
     bool reprocessLoadBalanceNumeric = useLoadBalancingCounting;
     rowsPerBlock = 1;
@@ -781,9 +767,9 @@ void MultiplyspECKImplementation(
         }
         if (blockCounterScale == nullptr)
         {
-            size_t combinedBlockStartSize = sizeof(IndexType) * (1 + kernelCountNumeric + matA->rows * (1 + actualKernelCount));
+            // size_t combinedBlockStartSize = sizeof(IndexType) * (1 + kernelCountNumeric + matA->rows * (1 + actualKernelCount));
 
-            HANDLE_ERROR(cudaMalloc(&d_blockStartRows, combinedBlockStartSize));
+            // HANDLE_ERROR(cudaMalloc(&d_blockStartRows, combinedBlockStartSize));
             blockStartRowsScale = &d_blockStartRows[matA->rows + 1];
             blockCounterScale = &blockStartRowsScale[actualKernelCount * matA->rows];
         }
@@ -797,7 +783,7 @@ void MultiplyspECKImplementation(
     }
     else
     {
-        HANDLE_ERROR(cudaFree(d_blockStartRows));
+        // HANDLE_ERROR(cudaFree(d_blockStartRows));
         d_blockStartRows = nullptr;
     }
     // for(int i = 0; i < kernelCountNumeric; i++) printf("h_blockCounterScaleNumeric[%d]= %d %d\n", i, h_blockCounterScaleNumeric[i], matC->row_data != nullptr); 
@@ -931,7 +917,8 @@ void MultiplyspECKImplementation(
 
         const uint32_t entrySize = sizeof(IndexType) + sizeof(DataType);
 
-        Config::SpGEMMMethods spGemmMethodNumeric = Config::HashSpGEMM;
+        Config::SpGEMMMethods spGemmMethodNumeric = Config::AutoSpGEMM;
+        // Config::SpGEMMMethods spGemmMethodNumeric = Config::DenseSpGEMM;
         // for(int i = 0; i < kernelCountNumeric; i++) printf("h_blockCounterScaleNumeric[%d]= %d blockPrefixScaled[%d]=%d\n", i, h_blockCounterScaleNumeric[i],i ,blockPrefixScaled[i]); 
 
         // -------------------------------------------------------------------------------------------------------------------------------------------
@@ -1152,8 +1139,8 @@ void MultiplyspECKImplementation(
     //  FREE ALLOCATED MEMORY
     // -------------------------------------------------------------------------------------------------------------------------------------------
 
-    if (d_blockStartRows != nullptr)
-        HANDLE_ERROR(cudaFree(d_blockStartRows));
+    // if (d_blockStartRows != nullptr)
+    //     HANDLE_ERROR(cudaFree(d_blockStartRows));
     if (hashMaps != nullptr)
         HANDLE_ERROR(cudaFree(hashMaps));
     if (maps_indices != nullptr)
@@ -1161,8 +1148,8 @@ void MultiplyspECKImplementation(
     if (maps_values != nullptr)
         HANDLE_ERROR(cudaFree(maps_values));
 
-    if (d_combined_pointers != nullptr)
-        HANDLE_ERROR(cudaFree(d_combined_pointers));
+    // if (d_combined_pointers != nullptr)
+    //     HANDLE_ERROR(cudaFree(d_combined_pointers));
 
     if (rowOffsetMaps != nullptr)
         HANDLE_ERROR(cudaFree(rowOffsetMaps));
