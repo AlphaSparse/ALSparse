@@ -33,7 +33,7 @@ __forceinline__ __device__ void merge_path_search(
 }
 
 template <int items_per_block, typename T, typename U, typename V, typename W>
-__device__ void merge_path_spmv(
+__global__ __launch_bounds__(SPMV_MERGE_BLOCK_SIZE) void merge_path_spmv(
     int IPT,
     const T num_rows,
     const T nnz,
@@ -144,39 +144,12 @@ __global__ __launch_bounds__(BLOCK_SIZE) void abstract_merge_path_search(
         if (gid < num_rows + block_num + 1)
         {
             y[gid - block_num - 1] *= beta;
-            return;
         }
-        else
-        {
-            return;
-        }
+        return;
     }
     const T diagonal = min(items_per_block * gid, num_merge_items);
     merge_path_search(diagonal, num_rows, nnz, row_end_ptrs, 0,
                       &block_start_xs[gid], &block_start_ys[gid]);
-}
-
-template <int items_per_block, typename T, typename U, typename V, typename W>
-__global__ __launch_bounds__(SPMV_MERGE_BLOCK_SIZE) void abstract_merge_path_spmv(
-    int items_per_thread,
-    const T num_rows,
-    const T nnz,
-    const T num_merge_items,
-    const W __restrict__ alpha,
-    const U *__restrict__ val,
-    const T *__restrict__ col_idxs,
-    const T *__restrict__ row_end_ptrs,
-    const U *__restrict__ x,
-    const W __restrict__ beta,
-    V *__restrict__ y,
-    T *block_start_xs,
-    T *block_start_ys)
-{
-    merge_path_spmv<items_per_block>(
-        items_per_thread, num_rows, nnz,
-        num_merge_items, alpha, val,
-        col_idxs, row_end_ptrs, x, beta, y,
-        block_start_xs, block_start_ys);
 }
 
 /**
@@ -247,7 +220,7 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
             beta);
         if (block_num > 0)
         {
-            abstract_merge_path_spmv<items_per_block><<<block_num, SPMV_MERGE_BLOCK_SIZE, maxbytes, 0>>>(
+            merge_path_spmv<items_per_block><<<block_num, SPMV_MERGE_BLOCK_SIZE, maxbytes, 0>>>(
                 items_per_thread,
                 m,
                 nnz,

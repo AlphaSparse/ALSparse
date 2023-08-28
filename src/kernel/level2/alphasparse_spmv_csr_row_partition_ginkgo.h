@@ -55,12 +55,8 @@ __global__ static void balanced_partition_row_by_nnz_and_scale_y(
         if (gid < nwarps + rows + 1)
         {
             y[gid - nwarps] *= beta;
-            return;
         }
-        else
-        {
-            return;
-        }
+        return;
     }
     partition[gid] = lower_bound_int<T, warp_size>(acc_sum_arr, rows, (ave * gid), nwarps);
 }
