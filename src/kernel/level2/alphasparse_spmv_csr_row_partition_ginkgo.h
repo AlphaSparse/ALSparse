@@ -33,10 +33,36 @@ __device__ static T lower_bound_int(const T *t, int r, int64_t target, int64_t n
 template <typename T, T warp_size>
 __global__ static void balanced_partition_row_by_nnz(const T *acc_sum_arr, T rows, T nwarps, T *partition, int64_t ave)
 {
-    const T idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= nwarps)
+    const T gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid >= nwarps)
         return;
-    partition[idx] = lower_bound_int<T, warp_size>(acc_sum_arr, rows, (ave * idx), nwarps);
+    partition[gid] = lower_bound_int<T, warp_size>(acc_sum_arr, rows, (ave * gid), nwarps);
+}
+
+template <typename T, typename W, typename V, T warp_size>
+__global__ static void balanced_partition_row_by_nnz_and_scale_y(
+    const T *acc_sum_arr,
+    T rows,
+    T nwarps,
+    T *partition,
+    int64_t ave,
+    const W beta,
+    V *y)
+{
+    const T gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid >= nwarps)
+    {
+        if (gid < nwarps + rows + 1)
+        {
+            y[gid - nwarps] *= beta;
+            return;
+        }
+        else
+        {
+            return;
+        }
+    }
+    partition[gid] = lower_bound_int<T, warp_size>(acc_sum_arr, rows, (ave * gid), nwarps);
 }
 
 template <typename T>
@@ -325,16 +351,6 @@ static void load_balance_spmv(const T m,
                               const T warp_size,
                               const int warps_in_block)
 {
-    if (beta != W{})
-    {
-        int block_size = 512;
-        int grid_size = ceildivT<int>(m, block_size);
-        array_scale<<<grid_size, block_size>>>(m, y, beta);
-    }
-    else
-    {
-        cudaMemset(y, 0, sizeof(V) * m);
-    }
     if (nwarps > 0)
     {
         const dim3 csr_block(warp_size, warps_in_block, 1);
@@ -347,9 +363,10 @@ static void load_balance_spmv(const T m,
             //            srow,
             //            nwarps * sizeof(T),
             //            cudaMemcpyHostToDevice);
-            abstract_load_balance_spmv<<<csr_grid, csr_block>>>(nwarps, m, nnz, csr_val,
-                                                                csr_col_ind, csr_row_ptr, srow_device, x, y,
-                                                                alpha, warps_in_block, warp_size);
+            abstract_load_balance_spmv<<<csr_grid, csr_block>>>(
+                nwarps, m, nnz, csr_val,
+                csr_col_ind, csr_row_ptr, srow_device, x, y,
+                alpha, warps_in_block, warp_size);
             // printf("\n+++++++++++++++++++++%d,%d,%d,%d,%d,%d,%d\n", nwarps, warps_in_block, warp_size, csr_grid.x, csr_grid.y, csr_block.x, csr_block.y);
             // printf("\n+++++++++++++++++++++%d,%d,%d,%d\n", csr_grid.x, csr_grid.y, csr_block.x, csr_block.y);
         }
@@ -379,7 +396,6 @@ alphasparseStatus_t spmv_csr_load(alphasparseHandle_t handle,
     // nwarps = 204800;
     // printf("nwarps:%d\n", nwarps);
     const T BLOCK_SIZE = 512;
-    const T GRIDSIZE = ceildivT<T>(nwarps, BLOCK_SIZE);
     // if (nwarps > m)
     // {
     //     double time1 = get_time_us();
@@ -400,8 +416,19 @@ alphasparseStatus_t spmv_csr_load(alphasparseHandle_t handle,
     // std::cout << "balanced time: " << duration.count() << " nanoseconds" << std::endl;
     T *partition = (T *)externalBuffer;
     const int64_t ave = ceildivT<int64_t>(nnz, warp_size);
-
-    balanced_partition_row_by_nnz<T, warp_size><<<dim3(GRIDSIZE), dim3(BLOCK_SIZE), 0, handle->stream>>>(csr_row_ptr + 1, m - 1, nwarps, partition, ave);
+    if (beta == W{})
+    {
+        cudaMemset(y, 0, sizeof(V) * m);
+        const T GRIDSIZE = ceildivT<T>(nwarps, BLOCK_SIZE);
+        balanced_partition_row_by_nnz<T, warp_size><<<dim3(GRIDSIZE), dim3(BLOCK_SIZE), 0, handle->stream>>>(
+            csr_row_ptr + 1, m - 1, nwarps, partition, ave);
+    }
+    else
+    {
+        const T GRIDSIZE = ceildivT<T>(nwarps + m, BLOCK_SIZE);
+        balanced_partition_row_by_nnz_and_scale_y<T, W, V, warp_size><<<dim3(GRIDSIZE), dim3(BLOCK_SIZE), 0, handle->stream>>>(
+            csr_row_ptr + 1, m - 1, nwarps, partition, ave, beta, y);
+    }
     load_balance_spmv(m, n, nnz, alpha, partition, csr_row_ptr,
                       csr_col_ind, csr_val, x, beta, y,
                       nwarps, warp_size, warps_in_block);
