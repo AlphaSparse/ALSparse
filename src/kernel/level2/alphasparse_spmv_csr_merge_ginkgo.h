@@ -27,9 +27,8 @@ __forceinline__ __device__ void merge_path_search(
             x_max = pivot;
         }
     }
-
-    *x = min(x_min, x_len);
-    *y = diagonal - *x;
+    *x = x_min;
+    *y = diagonal - x_min;
 }
 
 template <int items_per_block, typename T, typename U, typename V, typename W>
@@ -113,8 +112,6 @@ __global__ __launch_bounds__(SPMV_MERGE_BLOCK_SIZE) void merge_path_spmv(
             row_i++;
         }
     }
-    g.sync();
-
     // 140647.7
     const cooperative_groups::thread_block_tile<WARP_SIZE> tile_block =
         cooperative_groups::tiled_partition<WARP_SIZE>(g);
