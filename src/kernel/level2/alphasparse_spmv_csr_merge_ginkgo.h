@@ -31,10 +31,8 @@ __forceinline__ __device__ void merge_path_search(
     *y = diagonal - x_min;
 }
 
-template <typename T, typename U, typename V, typename W>
+template <int IPT, typename T, typename U, typename V, typename W>
 __global__ __launch_bounds__(SPMV_MERGE_BLOCK_SIZE) void merge_path_spmv(
-    int IPT,
-    int items_per_block,
     const T num_rows,
     const T nnz,
     const T num_merge_items,
@@ -191,15 +189,6 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
                                           V *y,
                                           void *externalBuffer)
 {
-    if (n == 1)
-    {
-        return spmv_csr_scalar(handle, m, n, nnz, alpha, csr_val, csr_row_ptr, csr_col_ind, x, beta, y);
-    }
-    int minimal_num =
-        ceildivT(sizeof(T) + sizeof(U), sizeof(T));
-    int items_per_thread = ITEMS_PER_THREAD * 4 / sizeof(T);
-    items_per_thread = std::max(minimal_num, items_per_thread);
-
     const T num_merge_items = m + nnz;
     const T items_per_block = SPMV_MERGE_BLOCK_SIZE * ITEMS_PER_THREAD;
     const T block_num = ceildivT(num_merge_items, items_per_block);
@@ -225,9 +214,7 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
             beta);
         if (block_num > 0)
         {
-            merge_path_spmv<<<block_num, SPMV_MERGE_BLOCK_SIZE, maxbytes, 0>>>(
-                items_per_thread,
-                items_per_block,
+            merge_path_spmv<ITEMS_PER_THREAD><<<block_num, SPMV_MERGE_BLOCK_SIZE, maxbytes, 0>>>(
                 m,
                 nnz,
                 num_merge_items,
