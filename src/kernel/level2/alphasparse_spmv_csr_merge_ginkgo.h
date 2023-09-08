@@ -31,9 +31,10 @@ __forceinline__ __device__ void merge_path_search(
     *y = diagonal - x_min;
 }
 
-template <int items_per_block, typename T, typename U, typename V, typename W>
+template <typename T, typename U, typename V, typename W>
 __global__ __launch_bounds__(SPMV_MERGE_BLOCK_SIZE) void merge_path_spmv(
     int IPT,
+    int items_per_block,
     const T num_rows,
     const T nnz,
     const T num_merge_items,
@@ -73,6 +74,11 @@ __global__ __launch_bounds__(SPMV_MERGE_BLOCK_SIZE) void merge_path_spmv(
 
     cooperative_groups::thread_block g = cooperative_groups::this_thread_block();
     g.sync();
+
+    if ((blockIdx.x * blockDim.x + threadIdx.x) * IPT >= num_rows + nnz)
+    {
+        return;
+    }
 
     T start_x;
     T start_y;
@@ -219,8 +225,9 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
             beta);
         if (block_num > 0)
         {
-            merge_path_spmv<items_per_block><<<block_num, SPMV_MERGE_BLOCK_SIZE, maxbytes, 0>>>(
+            merge_path_spmv<<<block_num, SPMV_MERGE_BLOCK_SIZE, maxbytes, 0>>>(
                 items_per_thread,
+                items_per_block,
                 m,
                 nnz,
                 num_merge_items,
