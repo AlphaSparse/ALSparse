@@ -1,10 +1,11 @@
 #include "alphasparse_spgemm_csr.h"
 #include "alphasparse_spgemm_nnz_csr.h"
 #include "alphasparse_spgemm_copy_csr.h"
-#include "alphasparse_spgemm_speck_csr.h"
+// #include "alphasparse_spgemm_speck_csr.h"
 #include "alphasparse_spgemm_fast_csr.h"
 #include "alphasparse_spgemm_amgx_csr.h"
 #include "alphasparse_spgemm_ns_csr.h"
+#include "alphasparse_spgemm_ac_csr.h"
 // #include "prasparse.h"
 #include <iostream>
 
@@ -144,9 +145,30 @@ spgemm_template(alphasparseHandle_t handle,
   return ALPHA_SPARSE_STATUS_NOT_SUPPORTED;
 }
 
+// template<typename T, typename U>
+// alphasparseStatus_t
+// spgemm_speck_template(alphasparseHandle_t handle,
+//                     alphasparseOperation_t opA,
+//                     alphasparseOperation_t opB,
+//                     const void* alpha,
+//                     alphasparseSpMatDescr_t matA,
+//                     alphasparseSpMatDescr_t matB,
+//                     const void* beta,
+//                     alphasparseSpMatDescr_t matC,
+//                     void * externalBuffer2)
+// {
+//   switch (matA->format) {
+//     case ALPHA_SPARSE_FORMAT_CSR: {      
+//       spgemm_csr_spECK<T, U, 4, 1024, spECK_DYNAMIC_MEM_PER_BLOCK, spECK_STATIC_MEM_PER_BLOCK>(handle, opA, opB, *((U*)alpha), matA, matB, *((U*)beta), matC, externalBuffer2);
+//       break;
+//     }
+//   }
+//   return ALPHA_SPARSE_STATUS_NOT_SUPPORTED;
+// }
+
 template<typename T, typename U>
 alphasparseStatus_t
-spgemm_speck_template(alphasparseHandle_t handle,
+spgemm_acsp_template(alphasparseHandle_t handle,
                     alphasparseOperation_t opA,
                     alphasparseOperation_t opB,
                     const void* alpha,
@@ -157,11 +179,10 @@ spgemm_speck_template(alphasparseHandle_t handle,
                     void * externalBuffer2)
 {
   switch (matA->format) {
-    case ALPHA_SPARSE_FORMAT_CSR: {      
-      spgemm_csr_spECK<T, U, 4, 1024, spECK_DYNAMIC_MEM_PER_BLOCK, spECK_STATIC_MEM_PER_BLOCK>(handle, opA, opB, *((U*)alpha), matA, matB, *((U*)beta), matC, externalBuffer2);
+    case ALPHA_SPARSE_FORMAT_CSR: {     
+      spgemm_csr_ac<T, U>(handle, opA, opB, *((U*)alpha), matA, matB, *((U*)beta), matC, externalBuffer2);
       break;
     }
-    return ALPHA_SPARSE_STATUS_SUCCESS;
   }
   return ALPHA_SPARSE_STATUS_NOT_SUPPORTED;
 }
@@ -267,13 +288,15 @@ alphasparseSpGEMM_compute(alphasparseHandle_t handle,
   // single real ; i32
   if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
       matA->data_type == ALPHA_R_32F && matC->data_type == ALPHA_R_32F) {
-    return spgemm_speck_template<uint32_t, float>(
+    // return spgemm_speck_template<uint32_t, float>(
+      return spgemm_template<int32_t, double>(
       handle, opA, opB, alpha, matA, matB, beta, matC, externalBuffer2);
   }
   if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
       matA->data_type == ALPHA_R_64F && matC->data_type == ALPHA_R_64F) {
-    return spgemm_template<int32_t, double>(
+    // return spgemm_template<int32_t, double>(
     // return spgemm_speck_template<uint32_t, double>(
+      return spgemm_acsp_template<uint32_t, double>(
       handle, opA, opB, alpha, matA, matB, beta, matC, externalBuffer2);
   }
   // if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
