@@ -3,15 +3,6 @@
 #include "ac/default_scheduling_traits.h"
 #include "ac/Multiply.h"
 
-template<typename IndexType, typename DataType>
-__global__ void mul_alpha(DataType * val, IndexType size, const DataType a)
-{
-    int tid = threadIdx.x + blockDim.x * blockIdx.x;
-    int str = blockDim.x * gridDim.x;
-    for(int i = tid; i < size; i += str)
-        val[i] *= a;
-}
-
 template <typename IndexType, typename DataType>
 alphasparseStatus_t spgemm_csr_ac(alphasparseHandle_t handle,
                         alphasparseOperation_t opA,
@@ -36,6 +27,5 @@ alphasparseStatus_t spgemm_csr_ac(alphasparseHandle_t handle,
     GPUMatrixMatrixMultiplyTraits DefaultTraits(Threads, BlocksPerMP, NNZPerThread, InputElementsPerThreads, RetainElementsPerThreads, MaxChunksToMerge, MaxChunksGeneralizedMerge, MergePathOptions); // DefaultTraits(128, 2, 4, 1, 8, 128, 8);
     DefaultTraits.preferLoadBalancing = true;
     ACSpGEMM::MultiplyImplementation<IndexType, DataType, 256, 3, 2, 4, 4, 16, 512, 8, false>(handle, opA, opB, alpha, matA, matB, beta, matC, (char *)externalBuffer2, DefaultTraits);
-    // mul_alpha<<<1024,256>>>((DataType*)matC->val_data, matC->nnz,alpha);
     return ALPHA_SPARSE_STATUS_SUCCESS;
 }
