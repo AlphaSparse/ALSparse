@@ -30,16 +30,12 @@ __forceinline__ __device__ void merge_path_search(
             x_max = pivot;
         }
     }
-    // if (x_min % 2 == 1)
-    //     x_min--;
-    *x = min(x_min / 2 * 2, x_len);
-
-    *y = diagonal - *x;
+    *x = x_min;
+    *y = diagonal - x_min;
 }
 
-template <int items_per_block, typename T, typename U, typename V, typename W>
-__device__ void merge_path_spmv(
-    int IPT,
+template <int IPT, typename T, typename U, typename V, typename W>
+__global__ __launch_bounds__(SPMV_MERGE_BLOCK_SIZE) void merge_path_spmv(
     const T num_rows,
     const T nnz,
     const T num_merge_items,
@@ -84,7 +80,12 @@ __device__ void merge_path_spmv(
     cooperative_groups::thread_block g = cooperative_groups::this_thread_block();
     g.sync();
 
-    T start_x2;
+    if ((blockIdx.x * blockDim.x + threadIdx.x) * IPT >= num_rows + nnz)
+    {
+        return;
+    }
+
+    T start_x;
     T start_y;
 
     // 266012.4
@@ -96,23 +97,7 @@ __device__ void merge_path_spmv(
     T row_i2 = block_start_x2 + start_x2;
     T ind = block_start_y + start_y;
     U value = U{};
-    T row_i = row_i2 / 2;
-    T start_x = start_x2 / 2;
-    // if (threadIdx.x == 2)
-    // {
-    //     printf("tid:%d, bid:%d, y[row_i]:%f, value:%f, block_num_rows2:%d, row_i2:%d, ind:%d, start_x2:%d, start_y:%d, block_num_nnz:%d, start_x:%d, row_i:%d, block_num_rows:%d, num_rows:%d, shared_val[start_y]:%f, shared_col_idxs[start_y]:%d, shared_row_ptrs[start_x]:%d\n",
-    //            threadIdx.x, blockIdx.x, y[row_i], value, block_num_rows2, row_i2, ind, start_x2, start_y, block_num_nnz, start_x, row_i, block_num_rows, num_rows, shared_val[start_y], shared_col_idxs[start_y], shared_row_ptrs[start_x]);
-    // }
-    // if (blockIdx.x == 1)
-    //     printf("start_x:%d, start_y:%d, row_i:%d, block_num_rows2:%d\n", start_x, start_y, row_i, block_num_rows2);
-    // if (block_num_rows2 % 2 == 1)
-    // {
-    //     printf("block_num_nnz:%d, row_i2:%d, start_x:%d ,start_y:%d ,block_num_rows2:%d ,block_num_rows:%d ,num_rows:%d, block_start_x:%d, block_start_y:%d\n", block_num_nnz, row_i2, start_x2, start_y, block_num_rows2, block_num_rows, num_rows, block_start_x, block_start_y);
-    // }
-    // if (start_x2 / 2 >= block_num_rows)
-    // {
-    //     printf("start_x2:%d, block_num_rows2:%d, block_num_rows:%d, num_rows:%d\n", start_x2, block_num_rows2, block_num_rows, num_rows);
-    // }
+    T temp_row_ptr = shared_row_ptrs[start_x];
 #pragma unroll
     for (T i = 0; i < IPT && row_i < num_rows && start_y < block_num_nnz; i++)
     {
@@ -124,6 +109,8 @@ __device__ void merge_path_spmv(
         // {
         //     printf("start_y:%d, block_num_nnz:%d\n", start_y, block_num_nnz);
         // }
+        if (ind < temp_row_ptr || start_x == block_num_rows)
+        {
 
         // if (start_x2 % 2 == 1)
         // {
@@ -162,13 +149,7 @@ __device__ void merge_path_spmv(
             atomicAdd(&y[row_i], alpha * value);
             start_x++;
             row_i++;
-            // if (i != 0 || (i == 0 && start_x2 % 2 == 0))
-            i++;
-            value = U{};
-            if (i == 8)
-            {
-                value += shared_val[start_y] * __ldg(&x[shared_col_idxs[start_y]]);
-            }
+            temp_row_ptr = shared_row_ptrs[start_x];
         }
         // if (row_i == 2)
         // {
@@ -181,9 +162,7 @@ __device__ void merge_path_spmv(
         //            threadIdx.x, value, block_num_rows2, row_i2, ind, start_x2, start_y, block_num_nnz, start_x, row_i, block_num_rows, num_rows, shared_val[start_y], shared_col_idxs[start_y], shared_row_ptrs[start_x]);
         // }
     }
-    g.sync();
-
-    // // 140647.7
+    // 140647.7
     const cooperative_groups::thread_block_tile<WARP_SIZE> tile_block =
         cooperative_groups::tiled_partition<WARP_SIZE>(g);
     bool head = segment_scan<WARP_SIZE>(tile_block, row_i, value);
@@ -213,33 +192,16 @@ __global__ __launch_bounds__(BLOCK_SIZE) void abstract_merge_path_search(
 {
     const T gid = blockIdx.x * blockDim.x + threadIdx.x;
     if (gid > block_num)
+    {
+        if (gid < num_rows + block_num + 1)
+        {
+            y[gid - block_num - 1] *= beta;
+        }
         return;
+    }
     const T diagonal = min(items_per_block * gid, num_merge_items);
     merge_path_search(diagonal, num_rows, nnz, row_end_ptrs, 0,
                       &block_start_xs[gid], &block_start_ys[gid]);
-}
-
-template <int items_per_block, typename T, typename U, typename V, typename W>
-__global__ __launch_bounds__(SPMV_MERGE_BLOCK_SIZE) void abstract_merge_path_spmv(
-    int items_per_thread,
-    const T num_rows,
-    const T nnz,
-    const T num_merge_items,
-    const W __restrict__ alpha,
-    const U *__restrict__ val,
-    const T *__restrict__ col_idxs,
-    const T *__restrict__ row_end_ptrs,
-    const U *__restrict__ x,
-    const W __restrict__ beta,
-    V *__restrict__ y,
-    T *block_start_xs,
-    T *block_start_ys)
-{
-    merge_path_spmv<items_per_block>(
-        items_per_thread, num_rows, nnz,
-        num_merge_items, alpha, val,
-        col_idxs, row_end_ptrs, x, beta, y,
-        block_start_xs, block_start_ys);
 }
 
 /**
@@ -276,16 +238,7 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
                                           V *y,
                                           void *externalBuffer)
 {
-    if (n == 1)
-    {
-        return spmv_csr_scalar(handle, m, n, nnz, alpha, csr_val, csr_row_ptr, csr_col_ind, x, beta, y);
-    }
-    int minimal_num =
-        ceildivT(sizeof(T) + sizeof(U), sizeof(T));
-    int items_per_thread = ITEMS_PER_THREAD * 4 / sizeof(T);
-    items_per_thread = std::max(minimal_num, items_per_thread);
-
-    const T num_merge_items = m * 2 + nnz;
+    const T num_merge_items = m + nnz;
     const T items_per_block = SPMV_MERGE_BLOCK_SIZE * ITEMS_PER_THREAD;
     const T block_num = ceildivT(num_merge_items, items_per_block);
 
@@ -317,11 +270,7 @@ alphasparseStatus_t spmv_csr_merge_ginkgo(alphasparseHandle_t handle,
         // GPU_TIMER_START(elapsed_time2, event_start2, event_stop2);
         if (block_num > 0)
         {
-            array_scale<<<ceildivT(m, BLOCK_SIZE), BLOCK_SIZE>>>(m, y, beta);
-            // printf("beta: %f\n", beta);
-            cudaDeviceSynchronize();
-            abstract_merge_path_spmv<items_per_block><<<block_num, SPMV_MERGE_BLOCK_SIZE, maxbytes, 0>>>(
-                items_per_thread,
+            merge_path_spmv<ITEMS_PER_THREAD><<<block_num, SPMV_MERGE_BLOCK_SIZE, maxbytes, 0>>>(
                 m,
                 nnz,
                 num_merge_items,
