@@ -55,7 +55,7 @@ __global__ __launch_bounds__(SPMV_MERGE_BLOCK_SIZE) void merge_path_spmv(
 
     T *shared_row_ptrs = reinterpret_cast<T *>(buffer);
     T *shared_col_idxs = reinterpret_cast<T *>(shared_row_ptrs + block_num_rows);
-    U *shared_val = reinterpret_cast<U *>(shared_col_idxs + block_num_nnz);
+    U *shared_val = reinterpret_cast<U *>(shared_row_ptrs + SPMV_MERGE_BLOCK_SIZE * ITEMS_PER_THREAD);
 
     // 66511.4
     for (int i = threadIdx.x; i < block_num_rows; i += SPMV_MERGE_BLOCK_SIZE)
