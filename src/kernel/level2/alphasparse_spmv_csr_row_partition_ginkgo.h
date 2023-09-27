@@ -10,14 +10,51 @@ __device__ __forceinline__ constexpr int64_t ceildiv_d(int64_t num, int64_t den)
     return (num + den - 1) / den;
 }
 
+template <typename T>
+__device__ static T lower_bound_int6(const int64_t *t, T l, T r, int64_t value)
+{
+    while (r > l)
+    {
+        T m = (l + r) / 2;
+        if (t[m] <= value)
+        {
+            l = m + 1;
+        }
+        else
+        {
+            r = m;
+        }
+    }
+    return l - 1;
+}
+
 template <typename T, T warp_size>
-__device__ static T lower_bound_int(const T *t, int r, int64_t target, int64_t nwarps)
+__device__ static T lower_bound_int(const T *t, T r, T target, T nwarps)
 {
     int l = 0;
     while (l <= r)
     {
         int m = (l + r) / 2;
         if ((int64_t)ceildivT<T>(t[m], warp_size) * nwarps < target)
+        {
+            l = m + 1;
+        }
+        else
+        {
+            r = m - 1;
+        }
+    }
+
+    return l;
+}
+
+template <typename T, T warp_size>
+__device__ static T lower_bound_int2(const T *t, T l, T r, int64_t target, T nwarps)
+{
+    while (l <= r)
+    {
+        int m = (l + r) / 2;
+        if (ceildivT<T>(t[m], warp_size) * (int64_t)nwarps < target)
         {
             l = m + 1;
         }
@@ -46,19 +83,28 @@ __global__ static void balanced_partition_row_by_nnz_and_scale_y(
     T nwarps,
     T *partition,
     int64_t ave,
+    const T ave_row,
     const W beta,
     V *y)
 {
+    extern __shared__ int64_t shared_buffer[];
     const T gid = blockIdx.x * blockDim.x + threadIdx.x;
+    shared_buffer[threadIdx.x] = ceildivT<T>(acc_sum_arr[min(threadIdx.x * ave_row, rows - 1)], warp_size) * (int64_t)nwarps;
+    __syncthreads();
     if (gid >= nwarps)
     {
-        if (gid < nwarps + rows + 1)
+        if (gid < nwarps + rows)
         {
             y[gid - nwarps] *= beta;
         }
         return;
     }
-    partition[gid] = lower_bound_int<T, warp_size>(acc_sum_arr, rows, (ave * gid), nwarps);
+    T idx2 = lower_bound_int6<T>(shared_buffer, 0, blockDim.x, (ave * gid));
+    T left = max(min(idx2 * ave_row, rows), 0);
+    T right = min(left + ave_row, rows);
+    partition[gid] = lower_bound_int2<T, warp_size>(acc_sum_arr, left, right, (ave * gid), nwarps);
+    // printf("threadIdx.x: %d, blockIdx.x: %d, gid: %d, idx2: %d, ave_row: %d, ave * gid: %ld, ave_row * idx2: %d, left: %d, right: %d, partition[gid]: %d, acc_sum_arr[partition[gid]]: %d\n",
+    //        threadIdx.x, blockIdx.x, gid, idx2, ave_row, ave * gid, ave_row * idx2, left, right, partition[gid], acc_sum_arr[partition[gid]]);
 }
 
 template <typename T>
@@ -411,7 +457,9 @@ alphasparseStatus_t spmv_csr_load(alphasparseHandle_t handle,
     // auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
     // std::cout << "balanced time: " << duration.count() << " nanoseconds" << std::endl;
     T *partition = (T *)externalBuffer;
-    const int64_t ave = ceildivT<int64_t>(nnz, warp_size);
+    const int maxbytes = BLOCK_SIZE * sizeof(int64_t);
+    const int64_t ave = ceildivT<T>(nnz, warp_size);
+    const T ave_row = ceildivT<T>(m, BLOCK_SIZE);
     if (beta == W{})
     {
         cudaMemset(y, 0, sizeof(V) * m);
@@ -422,8 +470,8 @@ alphasparseStatus_t spmv_csr_load(alphasparseHandle_t handle,
     else
     {
         const T GRIDSIZE = ceildivT<T>(nwarps + m, BLOCK_SIZE);
-        balanced_partition_row_by_nnz_and_scale_y<T, W, V, warp_size><<<dim3(GRIDSIZE), dim3(BLOCK_SIZE), 0, handle->stream>>>(
-            csr_row_ptr + 1, m - 1, nwarps, partition, ave, beta, y);
+        balanced_partition_row_by_nnz_and_scale_y<T, W, V, warp_size><<<dim3(GRIDSIZE), dim3(BLOCK_SIZE), maxbytes, handle->stream>>>(
+            csr_row_ptr + 1, m, nwarps, partition, ave, ave_row, beta, y);
     }
     load_balance_spmv(m, n, nnz, alpha, partition, csr_row_ptr,
                       csr_col_ind, csr_val, x, beta, y,
