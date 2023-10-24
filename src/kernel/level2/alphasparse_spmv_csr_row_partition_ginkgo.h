@@ -3,7 +3,8 @@
 #include "alphasparse.h"
 #include "alphasparse_spmv_csr_vector.h"
 
-constexpr int spmv_block_size = 128;
+#define WARPS_IN_BLOCK 4
+constexpr int spmv_block_size = WARPS_IN_BLOCK * WARP_SIZE;
 
 __device__ __forceinline__ constexpr int64_t ceildiv_d(int64_t num, int64_t den)
 {
@@ -385,9 +386,9 @@ alphasparseStatus_t spmv_csr_load(alphasparseHandle_t handle,
 {
     const T SM = 80;
     const T MAX_WARP_PER_SM = 64;
-    const T warp_size = 32;
+    const T warp_size = WARP_SIZE;
     const T nwarps_ = SM * MAX_WARP_PER_SM / warp_size;
-    const T warps_in_block = 4;
+    const T warps_in_block = WARPS_IN_BLOCK;
     T nwarps = clac_size(nnz, warp_size, nwarps_);
     // nwarps = 204800;
     // printf("nwarps:%d\n", nwarps);
