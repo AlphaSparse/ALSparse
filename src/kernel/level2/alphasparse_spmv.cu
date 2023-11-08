@@ -8,6 +8,8 @@
 #include "alphasparse_spmv_csr_merge_ginkgo.h"
 #include "alphasparse_spmv_csr_merge.h"
 #include "alphasparse_spmv_csr_row_partition_ginkgo.h"
+#include "alphasparse_spmv_csr_row_partition_text.h"
+#include "alphasparse_spmv_csr_line_enhance.h"
 #include "alphasparse_spmv_csr_adaptive.h"
 #include "alphasparse_spmv_csr_adaptive2.h"
 #include "alphasparse_spmv_coo_row_partition_ginkgo.h"
@@ -82,7 +84,37 @@ spmv_template(alphasparseHandle_t handle,
     }
     case ALPHA_SPARSE_SPMV_ROW_PARTITION:
     {
+      if(matA->data_type == ALPHA_R_32F)
+      // spmv_csr_load_f<T>(handle,
+      spmv_csr_line_adaptive<T>(handle,
+                                (T)matA->rows,
+                                (T)matA->cols,
+                                (T)matA->nnz,
+                                *((float *)alpha),
+                                (float *)matA->val_data,
+                                (T *)matA->row_data,
+                                (T *)matA->col_data,
+                                (float *)vecX->values,
+                                *((float *)beta),
+                                (float *)vecY->values,
+                                externalBuffer);
+      else if(matA->data_type == ALPHA_R_64F)
+      // spmv_csr_load_f<T>(handle,
+      spmv_csr_line_adaptive<T>(handle,
+                                (T)matA->rows,
+                                (T)matA->cols,
+                                (T)matA->nnz,
+                                *((double *)alpha),
+                                (double *)matA->val_data,
+                                (T *)matA->row_data,
+                                (T *)matA->col_data,
+                                (double *)vecX->values,
+                                *((double *)beta),
+                                (double *)vecY->values,
+                                externalBuffer);
+      else
       spmv_csr_load<T, U, V, W>(handle,
+      // spmv_csr_line<T, U, V, W>(handle,
                                 (T)matA->rows,
                                 (T)matA->cols,
                                 (T)matA->nnz,
@@ -93,7 +125,7 @@ spmv_template(alphasparseHandle_t handle,
                                 (U *)vecX->values,
                                 *((W *)beta),
                                 (V *)vecY->values,
-                                externalBuffer);
+                                externalBuffer);      
       break;
     }
     case ALPHA_SPARSE_SPMV_ALG_MERGE:
@@ -302,7 +334,7 @@ alphasparseSpMV_bufferSize(alphasparseHandle_t handle,
   }
   case ALPHA_SPARSE_SPMV_ROW_PARTITION:
   {
-    const int SM = 80;
+    const int SM = 520;
     const int MAX_WARP_PER_SM = 64;
     const int64_t warp_size = 32;
     const int64_t nwarps_ = SM * MAX_WARP_PER_SM / warp_size;
