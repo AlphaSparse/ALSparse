@@ -588,11 +588,15 @@ void MultiplyspECKImplementation(
             }
         }
     }
-
+    printf("h_blockCounterScaleCounting ");
+        for(int i = 0; i < kernelCountNumeric; i++) 
+            printf("%d ", h_blockCounterScaleCounting[i]); 
+        printf("\n");
     // -------------------------------------------------------------------------------------------------------------------------------------------
     //  COUNT NNZ PER ROW OF C
     // -------------------------------------------------------------------------------------------------------------------------------------------
-    {   double time1 = get_time_us();
+    {   
+        double time1 = get_time_us();
         if (h_blockCounterScaleCounting[0] > 0)
         {
             if (isDenseCounting)
@@ -676,7 +680,6 @@ void MultiplyspECKImplementation(
         HANDLE_ERROR(cudaDeviceSynchronize());
         time2 = get_time_us();
         std::cout << "h_SpGEMMCountLauncher 5 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
-        time1 = get_time_us(); 
     }    
     // -------------------------------------------------------------------------------------------------------------------------------------------
     //  SCAN ROW OFFSETS AND GET NNZ OF C
@@ -698,23 +701,7 @@ void MultiplyspECKImplementation(
         HANDLE_ERROR(cudaMemcpy(&nnz, (IndexType *)matC->row_data + matC->rows, sizeof(IndexType), cudaMemcpyDeviceToHost));
         tnnz = nnz;
     }
-    // printf("matC->nnz %d\n", matC->nnz);
-    // -------------------------------------------------------------------------------------------------------------------------------------------
-    //  ALLOCATE OUTPUT MATRIX C
-    // -------------------------------------------------------------------------------------------------------------------------------------------
 
-    // only allocate mem for mat C if size is not correct
-    // if (matOut.nnz != matC->nnz)
-    // {
-    //     matOut.alloc(matC->rows, matC.cols, matC->nnz, false);
-    // }
-
-    // if (matOut.data == nullptr || matOut.col_ids == nullptr)
-    // {
-    //     if (matOut.nnz > 0)
-    //         printf("ERROR: out of memory\n");
-    //     return;
-    // }
     if(tnnz != matC->nnz)
     {
         matC->nnz = tnnz;
@@ -937,33 +924,35 @@ void MultiplyspECKImplementation(
 
         Config::SpGEMMMethods spGemmMethodNumeric = Config::AutoSpGEMM;
         // Config::SpGEMMMethods spGemmMethodNumeric = Config::DenseSpGEMM;
-        for(int i = 0; i < kernelCountNumeric; i++) printf("h_blockCounterScaleNumeric[%d]= %d blockPrefixScaled[%d]=%d\n", i, h_blockCounterScaleNumeric[i],i ,blockPrefixScaled[i]); 
+        printf("h_blockCounterScaleNumeric ");
+        for(int i = 0; i < kernelCountNumeric; i++) 
+            printf("%d ", h_blockCounterScaleNumeric[i]); 
+        printf("\n");
         double time1 = get_time_us();
         // -------------------------------------------------------------------------------------------------------------------------------------------
         //  NUMERIC SPGEMM
         // -------------------------------------------------------------------------------------------------------------------------------------------
-        // if (h_blockCounterScaleNumeric[0] > 0)
-        // {   
-        //     spgemm.setLaunchDimensions(h_blockCounterScaleNumeric[0], streams[0], 32 * warpsNumeric, dynamicSharedBytesPerBlockNumeric);
-        //     spgemm.h_DenseSpGEMMNumeric<IndexType, DataType, GlobalMapRowOffsets, dynamicSharedBytesPerBlockNumeric, false, (32 * warpsNumeric)>(
-        //         matA, matB, (IndexType *)matC->row_data, (IndexType *)matC->col_data, (DataType *)matC->val_data, alpha, matC, (GlobalMapRowOffsets *)rowOffsetMaps, rowOffsetMapCount,
-        //         d_blockStartRows, d_rowOperations, h_blockCounterScaleNumeric[0], d_rowColMinMax,
-        //         d_rowMaxOperations, false, rowsPerBlock);
-        // }
         if (h_blockCounterScaleNumeric[0] > 0)
-        {
-            spgemm.setLaunchDimensions(h_blockCounterScaleNumeric[0], streams[0], 32 * warpsNumeric, sharedBytesPerBlockNumeric);
-            spgemm.h_SpGEMMNumericLauncher<IndexType, DataType, GlobalMap, GlobalMapRowOffsets, sharedBytesPerBlockNumeric, true, (32 * warpsNumeric)>(
-                matA, matB, (IndexType *)matC->row_data, (IndexType *)matC->col_data, (DataType *)matC->val_data, alpha, matC, (GlobalMap *)hashMaps, hashMapCount, rowOffsetMaps, rowOffsetMapCount,
-                d_blockStartRows, d_rowOperations,
-                Config::InPlace,
-                h_blockCounterScaleNumeric[0], d_rowColMinMax, 
-                d_rowMaxOperations, denseModeRowThresholdExternalSorting, false, rowsPerBlock);
+        {   
+            spgemm.setLaunchDimensions(h_blockCounterScaleNumeric[0], streams[0], 32 * warpsNumeric, dynamicSharedBytesPerBlockNumeric);
+            spgemm.h_DenseSpGEMMNumeric<IndexType, DataType, GlobalMapRowOffsets, dynamicSharedBytesPerBlockNumeric, false, (32 * warpsNumeric)>(
+                matA, matB, (IndexType *)matC->row_data, (IndexType *)matC->col_data, (DataType *)matC->val_data, alpha, matC, (GlobalMapRowOffsets *)rowOffsetMaps, rowOffsetMapCount,
+                d_blockStartRows, d_rowOperations, h_blockCounterScaleNumeric[0], d_rowColMinMax,
+                d_rowMaxOperations, false, rowsPerBlock);
         }
+        // if (h_blockCounterScaleNumeric[0] > 0)
+        // {
+        //     spgemm.setLaunchDimensions(h_blockCounterScaleNumeric[0], streams[0], 32 * warpsNumeric, sharedBytesPerBlockNumeric);
+        //     spgemm.h_SpGEMMNumericLauncher<IndexType, DataType, GlobalMap, GlobalMapRowOffsets, sharedBytesPerBlockNumeric, true, (32 * warpsNumeric)>(
+        //         matA, matB, (IndexType *)matC->row_data, (IndexType *)matC->col_data, (DataType *)matC->val_data, alpha, matC, (GlobalMap *)hashMaps, hashMapCount, rowOffsetMaps, rowOffsetMapCount,
+        //         d_blockStartRows, d_rowOperations,
+        //         Config::InPlace,
+        //         h_blockCounterScaleNumeric[0], d_rowColMinMax, 
+        //         d_rowMaxOperations, denseModeRowThresholdExternalSorting, false, rowsPerBlock);
+        // }
         HANDLE_ERROR(cudaDeviceSynchronize());
         double time2 = get_time_us();
         std::cout << "h_HashSpGEMMNumeric 0 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;     
-
         sortMode = sortAllInplace ? Config::InPlace : Config::Separate;
         // HANDLE_ERROR(cudaDeviceSynchronize());
         // IndexType * tmp = (IndexType*)malloc(sizeof(IndexType)*(50));
@@ -1152,7 +1141,7 @@ void MultiplyspECKImplementation(
         }
         HANDLE_ERROR(cudaDeviceSynchronize());
         time2 = get_time_us();
-        std::cout << "h_HashSpGEMMNumeric 2 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
+        std::cout << "h_HashSpGEMMNumeric 5 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
     }
     
     // mul_alpha<IndexType, DataType><<<1024, 256>>>((DataType *)matC->val_data,(IndexType)matC->nnz,alpha);

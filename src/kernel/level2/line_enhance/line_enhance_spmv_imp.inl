@@ -11,7 +11,7 @@ __global__ void line_enhance_kernel(int m, const W alpha, const W beta, const T 
   const int g_tid = threadIdx.x + blockDim.x * blockIdx.x; // global thread id
   const int g_bid = blockIdx.x;                            // global block id
   const int tid_in_block = g_tid % THREADS;                // local thread id in current block
-  
+
   constexpr int shared_len = THREADS * R;
   __shared__ U shared_val[shared_len];
 
@@ -32,7 +32,7 @@ __global__ void line_enhance_kernel(int m, const W alpha, const W beta, const T 
     reduce_row_idx_end = row_offset[reduce_row_id + 1];
   }
 
-  U sum = static_cast<U>(0);
+  U sum = U{};
   const int rounds = (block_row_idx_end - block_row_idx_start) / (R * THREADS) +
                      ((block_row_idx_end - block_row_idx_start) % (R * THREADS) == 0 ? 0 : 1);
   for (int r = 0; r < rounds; r++) {

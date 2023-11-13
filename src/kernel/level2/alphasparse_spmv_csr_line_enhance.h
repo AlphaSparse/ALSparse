@@ -53,6 +53,7 @@ alphasparseStatus_t spmv_csr_line_adaptive(alphasparseHandle_t handle,
   // for small matrix.
   const int mtx_nnz = nnz;
   const int nnz_per_row = mtx_nnz / m;
+  
   if (mtx_nnz <= (1 << 24)) { // 2^24=16,777,216
     if (nnz_per_row >= 32) {  // matrix has long rows
       constexpr int R = 4;

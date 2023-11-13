@@ -8,7 +8,7 @@
 #include "alphasparse_spmv_csr_merge_ginkgo.h"
 #include "alphasparse_spmv_csr_merge.h"
 #include "alphasparse_spmv_csr_row_partition_ginkgo.h"
-#include "alphasparse_spmv_csr_row_partition_text.h"
+// #include "alphasparse_spmv_csr_row_partition_text.h"
 #include "alphasparse_spmv_csr_line_enhance.h"
 #include "alphasparse_spmv_csr_adaptive.h"
 #include "alphasparse_spmv_csr_adaptive2.h"
@@ -87,6 +87,7 @@ spmv_template(alphasparseHandle_t handle,
       if(matA->data_type == ALPHA_R_32F)
       // spmv_csr_load_f<T>(handle,
       spmv_csr_line_adaptive<T>(handle,
+      // spmv_csr_line<T>(handle,
                                 (T)matA->rows,
                                 (T)matA->cols,
                                 (T)matA->nnz,
@@ -112,6 +113,18 @@ spmv_template(alphasparseHandle_t handle,
                                 *((double *)beta),
                                 (double *)vecY->values,
                                 externalBuffer);
+      // spmv_csr_line_adaptive<T>(handle,
+      //                           (T)matA->rows,
+      //                           (T)matA->cols,
+      //                           (T)matA->nnz,
+      //                           *((W *)alpha),
+      //                           (U *)matA->val_data,
+      //                           (T *)matA->row_data,
+      //                           (T *)matA->col_data,
+      //                           (U *)vecX->values,
+      //                           *((W *)beta),
+      //                           (V *)vecY->values,
+      //                           externalBuffer);
       else
       spmv_csr_load<T, U, V, W>(handle,
       // spmv_csr_line<T, U, V, W>(handle,

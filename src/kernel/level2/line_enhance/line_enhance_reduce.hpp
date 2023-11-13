@@ -51,7 +51,7 @@ __device__ __forceinline__ T line_enhance_vec_reduce(const I reduce_row_id, cons
                                                      const I reduce_row_idx_begin, const I reduce_row_idx_end,
                                                      const I block_round_inx_start, const I block_round_inx_end,
                                                      const T *shared_val, const int tid_in_vec) {
-  T local_sum = static_cast<T>(0);
+  T local_sum = T{};
   if (reduce_row_id < block_row_end) {
     if (reduce_row_idx_begin < block_round_inx_end && reduce_row_idx_end > block_round_inx_start) {
       // (label-1)
