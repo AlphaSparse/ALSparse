@@ -1,6 +1,5 @@
 #include "alphasparse.h"
 #include <iostream>
-#include <cuda/std/complex>
 
 // BSR indexing macros
 #define BSR_IND(j, bi, bj, dir) ((dir == ALPHASPARSE_DIRECTION_ROW) ? BSR_IND_R(j, bi, bj) : BSR_IND_C(j, bi, bj))

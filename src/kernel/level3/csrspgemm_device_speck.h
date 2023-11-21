@@ -204,10 +204,7 @@ void MultiplyspECKImplementation(
 {
     int maxStaticSharedMemoryPerBlock = handle->properties.sharedMemPerBlock;
     int maxDynamicSharedMemoryPerBlock = std::max(handle->properties.sharedMemPerBlockOptin, handle->properties.sharedMemPerBlock);
-
-    // those matrices automatically deallocate memory when used as param for cuda -> therefore i have written a new struct without deallocs
-    // dCSRNoDealloc<DataType> matA(matA_Dealloc), matB(matB_Dealloc);
-
+    // size_t buffer_size = 0;
     if (matB->cols > 1 << 27)
     {
         printf("ERROR: matrix B has more than %d columns (%lu)\n", 1 << 27, matB->cols);
@@ -299,18 +296,6 @@ void MultiplyspECKImplementation(
     CUstream stream = handle->streams[0];
     auto &streams = handle->streams;
 
-    // Allocate memory for offsets
-    // CU::unique_ptr newmat_offsets;
-    // if (matOut.rows != matA->rows)
-    // {
-    //     newmat_offsets = CU::allocMemory((matA->rows + 1) * sizeof(IndexType));
-    // }
-    // else if (matOut.row_offsets != nullptr)
-    // {
-    //     newmat_offsets.consume(reinterpret_cast<CUdeviceptr>(matOut.row_offsets));
-    //     matOut.row_offsets = nullptr;
-    // }
-
     IndexType *blockStartRowsScale = nullptr;
     IndexType *blockCounterScale = nullptr;
     IndexType h_blockCounterScaleNumeric[kernelCountNumeric] = {0};
@@ -347,9 +332,10 @@ void MultiplyspECKImplementation(
         d_combined_pointers_size += sizeof(uint32_t) * matA->rows;
 
     HANDLE_ERROR(cudaMalloc(&d_combined_pointers, d_combined_pointers_size));
-    // d_combined_pointers = (uint32_t *)externalBuffer2;
-    // externalBuffer2 += d_combined_pointers_size;
+    d_combined_pointers = (uint32_t *)externalBuffer2;
+    externalBuffer2 += d_combined_pointers_size;
     HANDLE_ERROR(cudaMemsetAsync(d_combined_pointers, 0, d_combined_pointers_size));
+    // buffer_size += d_combined_pointers_size;
     // printf("d_combined_pointers_size %d\n",d_combined_pointers_size);
     d_maxElementsPerRow = d_combined_pointers;
     /* keep this order */
@@ -457,14 +443,14 @@ void MultiplyspECKImplementation(
     if (useLoadBalancingCounting)
     {
         size_t combinedBlockStartSize = sizeof(IndexType) * (1 + kernelCountCounting + matA->rows * (1 + actualKernelCount));
-        // d_blockStartRows = (IndexType *)externalBuffer2;
-        // externalBuffer2 += combinedBlockStartSize;
+        d_blockStartRows = (IndexType *)externalBuffer2;
+        externalBuffer2 += combinedBlockStartSize;
         // printf("combinedBlockStartSize %d\n",combinedBlockStartSize);
-        HANDLE_ERROR(cudaMalloc(&d_blockStartRows, combinedBlockStartSize));
+        // HANDLE_ERROR(cudaMalloc(&d_blockStartRows, combinedBlockStartSize));
         blockStartRowsScale = &d_blockStartRows[matA->rows + 1];
         blockCounterScale = &blockStartRowsScale[actualKernelCount * matA->rows];
         HANDLE_ERROR(cudaMemset(blockCounterScale, 0, sizeof(IndexType) * kernelCountCounting));
-
+        // buffer_size += combinedBlockStartSize;
         // load balance over amount of operations per row in A
         spgemm.h_AssignHashSpGEMMBlocksToRowsOfSameSizeOperations<uint32_t, DataType, uint8_t, kernelCountCounting>(
             matA, matB, d_rowOperations, blockStartRowsScale, blockCounterScale, h_blockCounterScaleCounting, d_blockStartRows,
@@ -513,18 +499,18 @@ void MultiplyspECKImplementation(
             if (longestRowALength == 0)
             {
                 uint32_t *d_longestRowALength = nullptr;
-                // d_longestRowALength = (uint32_t *)externalBuffer2;
-                // externalBuffer2 += sizeof(uint32_t);
-                HANDLE_ERROR(cudaMalloc(&d_longestRowALength, sizeof(uint32_t)));
+                d_longestRowALength = (uint32_t *)externalBuffer2;
+                externalBuffer2 += sizeof(uint32_t);
+                // HANDLE_ERROR(cudaMalloc(&d_longestRowALength, sizeof(uint32_t)));
                 HANDLE_ERROR(cudaMemset(d_longestRowALength, 0, sizeof(uint32_t)));
-
+                // buffer_size += sizeof(uint32_t);
                 const uint32_t blockdim = 256;
                 const uint32_t rowsPerThread = 2;
                 const uint32_t blocks = divup(uint32_t(matA->rows), blockdim * rowsPerThread);
                 getLongestRowA<IndexType, blockdim, rowsPerThread><<<blocks, blockdim>>>((IndexType*)matA->row_data, d_longestRowALength, (IndexType)matA->rows, (IndexType)matA->nnz);
                 cudaMemcpy(&longestRowALength, d_longestRowALength, sizeof(uint32_t), cudaMemcpyDeviceToHost);
             }
-            //buffer size is set before
+            
             // only use global maps if the row cursors can't be held in shared memory
             if (elementsPerMap * 2 > warpsCounting * entriesPerWarpCounting)
             {
@@ -544,7 +530,7 @@ void MultiplyspECKImplementation(
             }
         }
     }
-
+    // printf("buffer_size %d\n", buffer_size);
     if (supportGlobalFallback)
     {
         HANDLE_ERROR(cudaMalloc(&hashMaps, globalMapMaxSize * hashMapCount));
@@ -602,11 +588,15 @@ void MultiplyspECKImplementation(
             }
         }
     }
-
+    printf("h_blockCounterScaleCounting ");
+        for(int i = 0; i < kernelCountNumeric; i++) 
+            printf("%d ", h_blockCounterScaleCounting[i]); 
+        printf("\n");
     // -------------------------------------------------------------------------------------------------------------------------------------------
     //  COUNT NNZ PER ROW OF C
     // -------------------------------------------------------------------------------------------------------------------------------------------
-    {
+    {   
+        double time1 = get_time_us();
         if (h_blockCounterScaleCounting[0] > 0)
         {
             if (isDenseCounting)
@@ -627,7 +617,10 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
             }
         }
-        // HANDLE_ERROR(cudaDeviceSynchronize());printf("!!!636\n");
+        HANDLE_ERROR(cudaDeviceSynchronize());       
+        double time2 = get_time_us();
+        std::cout << "h_SpGEMMCountLauncher 0 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
+        time1 = get_time_us(); 
         if (kernelCountCounting > 1 && h_blockCounterScaleCounting[1] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[1], streams[1], 32 * warpsCounting >> 0, sharedBytesPerBlockCounting >> 0);
@@ -636,7 +629,10 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[1], h_blockCounterScaleCounting[1], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
-        // HANDLE_ERROR(cudaDeviceSynchronize());
+        HANDLE_ERROR(cudaDeviceSynchronize());
+        time2 = get_time_us();
+        std::cout << "h_SpGEMMCountLauncher 1 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
+        time1 = get_time_us(); 
         if (kernelCountCounting > 2 && h_blockCounterScaleCounting[2] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[2], streams[2], (32 * warpsCounting >> 1), sharedBytesPerBlockCounting >> 1);
@@ -645,7 +641,10 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[2], h_blockCounterScaleCounting[2], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
-        // HANDLE_ERROR(cudaDeviceSynchronize());
+        HANDLE_ERROR(cudaDeviceSynchronize());
+        time2 = get_time_us();
+        std::cout << "h_SpGEMMCountLauncher 2 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
+        time1 = get_time_us(); 
         if (kernelCountCounting > 3 && h_blockCounterScaleCounting[3] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[3], streams[3], (32 * warpsCounting >> 2), sharedBytesPerBlockCounting >> 2);
@@ -654,7 +653,10 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[3], h_blockCounterScaleCounting[3], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
-        // HANDLE_ERROR(cudaDeviceSynchronize());
+        HANDLE_ERROR(cudaDeviceSynchronize());
+        time2 = get_time_us();
+        std::cout << "h_SpGEMMCountLauncher 3 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
+        time1 = get_time_us(); 
         if (kernelCountCounting > 4 && h_blockCounterScaleCounting[4] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[4], streams[4], 32 * warpsCounting >> 3, sharedBytesPerBlockCounting >> 3);
@@ -663,7 +665,10 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[4], h_blockCounterScaleCounting[4], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
-        // HANDLE_ERROR(cudaDeviceSynchronize());
+        HANDLE_ERROR(cudaDeviceSynchronize());
+        time2 = get_time_us();
+        std::cout << "h_SpGEMMCountLauncher 4 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
+        time1 = get_time_us(); 
         if (kernelCountCounting > 5 && h_blockCounterScaleCounting[5] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[5], streams[5], 32 * warpsCounting >> 4, sharedBytesPerBlockCounting >> 4);
@@ -672,8 +677,10 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[5], h_blockCounterScaleCounting[5], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
-    }
-    // HANDLE_ERROR(cudaDeviceSynchronize());
+        HANDLE_ERROR(cudaDeviceSynchronize());
+        time2 = get_time_us();
+        std::cout << "h_SpGEMMCountLauncher 5 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
+    }    
     // -------------------------------------------------------------------------------------------------------------------------------------------
     //  SCAN ROW OFFSETS AND GET NNZ OF C
     // -------------------------------------------------------------------------------------------------------------------------------------------
@@ -694,23 +701,7 @@ void MultiplyspECKImplementation(
         HANDLE_ERROR(cudaMemcpy(&nnz, (IndexType *)matC->row_data + matC->rows, sizeof(IndexType), cudaMemcpyDeviceToHost));
         tnnz = nnz;
     }
-    // printf("matC->nnz %d\n", matC->nnz);
-    // -------------------------------------------------------------------------------------------------------------------------------------------
-    //  ALLOCATE OUTPUT MATRIX C
-    // -------------------------------------------------------------------------------------------------------------------------------------------
 
-    // only allocate mem for mat C if size is not correct
-    // if (matOut.nnz != matC->nnz)
-    // {
-    //     matOut.alloc(matC->rows, matC.cols, matC->nnz, false);
-    // }
-
-    // if (matOut.data == nullptr || matOut.col_ids == nullptr)
-    // {
-    //     if (matOut.nnz > 0)
-    //         printf("ERROR: out of memory\n");
-    //     return;
-    // }
     if(tnnz != matC->nnz)
     {
         matC->nnz = tnnz;
@@ -727,7 +718,7 @@ void MultiplyspECKImplementation(
     // -------------------------------------------------------------------------------------------------------------------------------------------
 
     uint32_t maxElementsPerRow = maxRowLength;
-    cudaMemcpy(&maxElementsPerRow, d_maxElementsPerRow, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    HANDLE_ERROR(cudaMemcpy(&maxElementsPerRow, d_maxElementsPerRow, sizeof(uint32_t), cudaMemcpyDeviceToHost));
     
     bool reprocessLoadBalanceNumeric = useLoadBalancingCounting;
     rowsPerBlock = 1;
@@ -781,9 +772,9 @@ void MultiplyspECKImplementation(
         }
         if (blockCounterScale == nullptr)
         {
-            size_t combinedBlockStartSize = sizeof(IndexType) * (1 + kernelCountNumeric + matA->rows * (1 + actualKernelCount));
+            // size_t combinedBlockStartSize = sizeof(IndexType) * (1 + kernelCountNumeric + matA->rows * (1 + actualKernelCount));
 
-            HANDLE_ERROR(cudaMalloc(&d_blockStartRows, combinedBlockStartSize));
+            // HANDLE_ERROR(cudaMalloc(&d_blockStartRows, combinedBlockStartSize));
             blockStartRowsScale = &d_blockStartRows[matA->rows + 1];
             blockCounterScale = &blockStartRowsScale[actualKernelCount * matA->rows];
         }
@@ -797,7 +788,7 @@ void MultiplyspECKImplementation(
     }
     else
     {
-        HANDLE_ERROR(cudaFree(d_blockStartRows));
+        // HANDLE_ERROR(cudaFree(d_blockStartRows));
         d_blockStartRows = nullptr;
     }
     // for(int i = 0; i < kernelCountNumeric; i++) printf("h_blockCounterScaleNumeric[%d]= %d %d\n", i, h_blockCounterScaleNumeric[i], matC->row_data != nullptr); 
@@ -931,28 +922,44 @@ void MultiplyspECKImplementation(
 
         const uint32_t entrySize = sizeof(IndexType) + sizeof(DataType);
 
-        Config::SpGEMMMethods spGemmMethodNumeric = Config::HashSpGEMM;
-        // for(int i = 0; i < kernelCountNumeric; i++) printf("h_blockCounterScaleNumeric[%d]= %d blockPrefixScaled[%d]=%d\n", i, h_blockCounterScaleNumeric[i],i ,blockPrefixScaled[i]); 
-
+        Config::SpGEMMMethods spGemmMethodNumeric = Config::AutoSpGEMM;
+        // Config::SpGEMMMethods spGemmMethodNumeric = Config::DenseSpGEMM;
+        printf("h_blockCounterScaleNumeric ");
+        for(int i = 0; i < kernelCountNumeric; i++) 
+            printf("%d ", h_blockCounterScaleNumeric[i]); 
+        printf("\n");
+        double time1 = get_time_us();
         // -------------------------------------------------------------------------------------------------------------------------------------------
         //  NUMERIC SPGEMM
         // -------------------------------------------------------------------------------------------------------------------------------------------
         if (h_blockCounterScaleNumeric[0] > 0)
         {   
             spgemm.setLaunchDimensions(h_blockCounterScaleNumeric[0], streams[0], 32 * warpsNumeric, dynamicSharedBytesPerBlockNumeric);
-            spgemm.h_DenseSpGEMMNumeric<IndexType, DataType, GlobalMapRowOffsets, dynamicSharedBytesPerBlockNumeric, true, (32 * warpsNumeric)>(
+            spgemm.h_DenseSpGEMMNumeric<IndexType, DataType, GlobalMapRowOffsets, dynamicSharedBytesPerBlockNumeric, false, (32 * warpsNumeric)>(
                 matA, matB, (IndexType *)matC->row_data, (IndexType *)matC->col_data, (DataType *)matC->val_data, alpha, matC, (GlobalMapRowOffsets *)rowOffsetMaps, rowOffsetMapCount,
                 d_blockStartRows, d_rowOperations, h_blockCounterScaleNumeric[0], d_rowColMinMax,
                 d_rowMaxOperations, false, rowsPerBlock);
         }
-
+        // if (h_blockCounterScaleNumeric[0] > 0)
+        // {
+        //     spgemm.setLaunchDimensions(h_blockCounterScaleNumeric[0], streams[0], 32 * warpsNumeric, sharedBytesPerBlockNumeric);
+        //     spgemm.h_SpGEMMNumericLauncher<IndexType, DataType, GlobalMap, GlobalMapRowOffsets, sharedBytesPerBlockNumeric, true, (32 * warpsNumeric)>(
+        //         matA, matB, (IndexType *)matC->row_data, (IndexType *)matC->col_data, (DataType *)matC->val_data, alpha, matC, (GlobalMap *)hashMaps, hashMapCount, rowOffsetMaps, rowOffsetMapCount,
+        //         d_blockStartRows, d_rowOperations,
+        //         Config::InPlace,
+        //         h_blockCounterScaleNumeric[0], d_rowColMinMax, 
+        //         d_rowMaxOperations, denseModeRowThresholdExternalSorting, false, rowsPerBlock);
+        // }
+        HANDLE_ERROR(cudaDeviceSynchronize());
+        double time2 = get_time_us();
+        std::cout << "h_HashSpGEMMNumeric 0 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;     
         sortMode = sortAllInplace ? Config::InPlace : Config::Separate;
         // HANDLE_ERROR(cudaDeviceSynchronize());
         // IndexType * tmp = (IndexType*)malloc(sizeof(IndexType)*(50));
         // HANDLE_ERROR(cudaMemcpy(tmp, (IndexType *)matC->col_data, sizeof(IndexType)*(50), cudaMemcpyDeviceToHost));
         // for(int i = 0; i < 50; i++) printf("tmp[%d]=%d\n",i,tmp[i]);
         bool setSortingBit = sortAllInplace ? false : maxElementsPerRow >= 500;
-
+        time1 = get_time_us();
         if (kernelCountNumeric > 1 && h_blockCounterScaleNumeric[1] > 0)
         {   
             if (spGemmMethodNumeric == Config::AutoSpGEMM)
@@ -985,7 +992,10 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, setSortingBit, rowsPerBlock);
             }
         }
-        // HANDLE_ERROR(cudaDeviceSynchronize());
+        HANDLE_ERROR(cudaDeviceSynchronize());
+        time2 = get_time_us();
+        std::cout << "h_HashSpGEMMNumeric 1 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
+        time1 = get_time_us();
         if (kernelCountNumeric > 2 && h_blockCounterScaleNumeric[2] > 0)
         {
             if (spGemmMethodNumeric == Config::AutoSpGEMM)
@@ -1018,7 +1028,10 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, setSortingBit, rowsPerBlock);
             }
         }
-        // HANDLE_ERROR(cudaDeviceSynchronize());
+        HANDLE_ERROR(cudaDeviceSynchronize());
+        time2 = get_time_us();
+        std::cout << "h_HashSpGEMMNumeric 2 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
+        time1 = get_time_us();
         sortMode = Config::InPlace;
 
         if (kernelCountNumeric > 3 && h_blockCounterScaleNumeric[3] > 0)
@@ -1053,7 +1066,10 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, false, rowsPerBlock);
             }
         }
-        // HANDLE_ERROR(cudaDeviceSynchronize());
+        HANDLE_ERROR(cudaDeviceSynchronize());
+        time2 = get_time_us();
+        std::cout << "h_HashSpGEMMNumeric 3 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
+        time1 = get_time_us();
         if (kernelCountNumeric > 4 && h_blockCounterScaleNumeric[4] > 0)
         {
             if (spGemmMethodNumeric == Config::AutoSpGEMM)
@@ -1086,7 +1102,10 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, false, rowsPerBlock);
             }
         }
-        // HANDLE_ERROR(cudaDeviceSynchronize());
+        HANDLE_ERROR(cudaDeviceSynchronize());
+        time2 = get_time_us();
+        std::cout << "h_HashSpGEMMNumeric 4 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
+        time1 = get_time_us();
         if (kernelCountNumeric > 5 && h_blockCounterScaleNumeric[5] > 0)
         {
             if (spGemmMethodNumeric == Config::AutoSpGEMM || ((rowsPerBlock > 1 || reprocessLoadBalanceNumeric) && spGemmMethodNumeric != Config::HashSpGEMM))
@@ -1120,8 +1139,11 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, false, rowsPerBlock);
             }
         }
+        HANDLE_ERROR(cudaDeviceSynchronize());
+        time2 = get_time_us();
+        std::cout << "h_HashSpGEMMNumeric 5 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
     }
-    // HANDLE_ERROR(cudaDeviceSynchronize());
+    
     // mul_alpha<IndexType, DataType><<<1024, 256>>>((DataType *)matC->val_data,(IndexType)matC->nnz,alpha);
     // HANDLE_ERROR(cudaDeviceSynchronize());
     // DataType * val = (DataType *)malloc(matC->nnz*sizeof(DataType));
@@ -1152,8 +1174,8 @@ void MultiplyspECKImplementation(
     //  FREE ALLOCATED MEMORY
     // -------------------------------------------------------------------------------------------------------------------------------------------
 
-    if (d_blockStartRows != nullptr)
-        HANDLE_ERROR(cudaFree(d_blockStartRows));
+    // if (d_blockStartRows != nullptr)
+    //     HANDLE_ERROR(cudaFree(d_blockStartRows));
     if (hashMaps != nullptr)
         HANDLE_ERROR(cudaFree(hashMaps));
     if (maps_indices != nullptr)
@@ -1161,8 +1183,8 @@ void MultiplyspECKImplementation(
     if (maps_values != nullptr)
         HANDLE_ERROR(cudaFree(maps_values));
 
-    if (d_combined_pointers != nullptr)
-        HANDLE_ERROR(cudaFree(d_combined_pointers));
+    // if (d_combined_pointers != nullptr)
+    //     HANDLE_ERROR(cudaFree(d_combined_pointers));
 
     if (rowOffsetMaps != nullptr)
         HANDLE_ERROR(cudaFree(rowOffsetMaps));

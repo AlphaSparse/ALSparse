@@ -1,9 +1,7 @@
 #pragma once
 
-#include <cooperative_groups.h>
 #include "alphasparse.h"
 #include "alphasparse_spmv_csr_vector.h"
-#include <thrust/scan.h>
 
 constexpr int spmv_block_size = 128;
 
@@ -12,8 +10,26 @@ __device__ __forceinline__ constexpr int64_t ceildiv_d(int64_t num, int64_t den)
     return (num + den - 1) / den;
 }
 
+template <typename T>
+__device__ static T lower_bound_int6(const int64_t *t, T l, T r, int64_t value)
+{
+    while (r > l)
+    {
+        T m = (l + r) / 2;
+        if (t[m] <= value)
+        {
+            l = m + 1;
+        }
+        else
+        {
+            r = m;
+        }
+    }
+    return l - 1;
+}
+
 template <typename T, T warp_size>
-__device__ static T lower_bound_int(const T *t, int r, int64_t target, int64_t nwarps)
+__device__ static T lower_bound_int(const T *t, T r, T target, T nwarps)
 {
     int l = 0;
     while (l <= r)
@@ -33,12 +49,62 @@ __device__ static T lower_bound_int(const T *t, int r, int64_t target, int64_t n
 }
 
 template <typename T, T warp_size>
+__device__ static T lower_bound_int2(const T *t, T l, T r, int64_t target, T nwarps)
+{
+    while (l <= r)
+    {
+        int m = (l + r) / 2;
+        if (ceildivT<T>(t[m], warp_size) * (int64_t)nwarps < target)
+        {
+            l = m + 1;
+        }
+        else
+        {
+            r = m - 1;
+        }
+    }
+
+    return l;
+}
+
+template <typename T, T warp_size>
 __global__ static void balanced_partition_row_by_nnz(const T *acc_sum_arr, T rows, T nwarps, T *partition, int64_t ave)
 {
-    const T idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx >= nwarps)
+    const T gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid >= nwarps)
         return;
-    partition[idx] = lower_bound_int<T, warp_size>(acc_sum_arr, rows, (ave * idx), nwarps);
+    partition[gid] = lower_bound_int<T, warp_size>(acc_sum_arr, rows, (ave * gid), nwarps);
+}
+
+template <typename T, typename W, typename V, T warp_size>
+__global__ static void balanced_partition_row_by_nnz_and_scale_y(
+    const T *acc_sum_arr,
+    T rows,
+    T nwarps,
+    T *partition,
+    int64_t ave,
+    const T ave_row,
+    const W beta,
+    V *y)
+{
+    extern __shared__ int64_t shared_buffer[];
+    const T gid = blockIdx.x * blockDim.x + threadIdx.x;
+    shared_buffer[threadIdx.x] = ceildivT<T>(acc_sum_arr[min(threadIdx.x * ave_row, rows - 1)], warp_size) * (int64_t)nwarps;
+    __syncthreads();
+    if (gid >= nwarps)
+    {
+        if (gid < nwarps + rows)
+        {
+            y[gid - nwarps] *= beta;
+        }
+        return;
+    }
+    T idx2 = lower_bound_int6<T>(shared_buffer, 0, blockDim.x, (ave * gid));
+    T left = max(min(idx2 * ave_row, rows), 0);
+    T right = min(left + ave_row, rows);
+    partition[gid] = lower_bound_int2<T, warp_size>(acc_sum_arr, left, right, (ave * gid), nwarps);
+    // printf("threadIdx.x: %d, blockIdx.x: %d, gid: %d, idx2: %d, ave_row: %d, ave * gid: %ld, ave_row * idx2: %d, left: %d, right: %d, partition[gid]: %d, acc_sum_arr[partition[gid]]: %d\n",
+    //        threadIdx.x, blockIdx.x, gid, idx2, ave_row, ave * gid, ave_row * idx2, left, right, partition[gid], acc_sum_arr[partition[gid]]);
 }
 
 template <typename T>
@@ -91,7 +157,7 @@ T clac_size(const T nnz, const T warp_size, const T nwarps_)
             multiple = 32;
         }
         auto nwarps = nwarps_ * multiple;
-        return min(ceildiv((int64_t)nnz, (int64_t)warp_size), (int64_t)nwarps);
+        return min(ceildivT((int64_t)nnz, (int64_t)warp_size), (int64_t)nwarps);
     }
     else
     {
@@ -214,35 +280,6 @@ __device__ __forceinline__ void process_window(
     }
 }
 
-template <unsigned subwarp_size = 16, typename ValueType, typename IndexType,
-          typename Operator>
-__device__ __forceinline__ bool segment_scan(
-    const cooperative_groups::thread_block_tile<subwarp_size> &group, const IndexType ind,
-    ValueType &val, Operator op)
-{
-    bool head = true;
-#pragma unroll
-    for (int i = 1; i < subwarp_size; i <<= 1)
-    {
-        const IndexType add_ind = group.shfl_up(ind, i);
-        ValueType add_val{};
-        if (add_ind == ind && group.thread_rank() >= i)
-        {
-            add_val = val;
-            if (i == 1)
-            {
-                head = false;
-            }
-        }
-        add_val = group.shfl_down(add_val, i);
-        if (group.thread_rank() < subwarp_size - i)
-        {
-            val = op(val, add_val);
-        }
-    }
-    return head;
-}
-
 template <unsigned subwarp_size, typename ValueType1, typename ValueType2, typename IndexType,
           typename Closure>
 __device__ __forceinline__ void warp_atomic_add(
@@ -251,9 +288,8 @@ __device__ __forceinline__ void warp_atomic_add(
     Closure scale)
 {
     // do a local scan to avoid atomic collisions
-    const bool need_write = segment_scan(
-        group, row, val, [](ValueType1 a, ValueType1 b)
-        { return a + b; });
+    const bool need_write = segment_scan<subwarp_size>(
+        group, row, val);
     if (need_write && force_write)
     {
         atomicAdd(&(c[row]), scale(val));
@@ -270,16 +306,6 @@ __device__ __forceinline__ IndexType get_warp_start_idx(
 {
     const long long cache_lines = ceildivT<IndexType>(nnz, warp_size);
     return (warp_idx * cache_lines / nwarps) * warp_size;
-}
-
-using cooperative_groups::this_thread_block;
-using cooperative_groups::thread_block_tile;
-
-template <unsigned Size, typename Group>
-__device__ __forceinline__ thread_block_tile<Size, void> tiled_partition(
-    Group &g)
-{
-    return cooperative_groups::tiled_partition<Size>(g);
 }
 
 template <typename T, typename U, typename V, typename Closure>
@@ -351,16 +377,6 @@ __global__ __launch_bounds__(spmv_block_size) void abstract_load_balance_spmv(
         warps_in_block, warp_size);
 }
 
-template <typename T, typename V, typename W>
-__global__ void array_scale(T m, V *array, W beta)
-{
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < m)
-    {
-        array[idx] *= beta;
-    }
-}
-
 template <typename T, typename U, typename V, typename W>
 static void load_balance_spmv(const T m,
                               const T n,
@@ -377,20 +393,10 @@ static void load_balance_spmv(const T m,
                               const T warp_size,
                               const int warps_in_block)
 {
-    if (beta != W{})
-    {
-        int block_size = 512;
-        int grid_size = ceildivT<int>(m, block_size);
-        array_scale<<<grid_size, block_size>>>(m, y, beta);
-    }
-    else
-    {
-        cudaMemset(y, 0, sizeof(V) * m);
-    }
     if (nwarps > 0)
     {
         const dim3 csr_block(warp_size, warps_in_block, 1);
-        const dim3 csr_grid(ceildiv((int64_t)nwarps, (int64_t)warps_in_block), 1);
+        const dim3 csr_grid(ceildivT((int64_t)nwarps, (int64_t)warps_in_block), 1);
         if (csr_grid.x > 0 && csr_grid.y > 0)
         {
             T *srow_device = srow;
@@ -399,9 +405,10 @@ static void load_balance_spmv(const T m,
             //            srow,
             //            nwarps * sizeof(T),
             //            cudaMemcpyHostToDevice);
-            abstract_load_balance_spmv<<<csr_grid, csr_block>>>(nwarps, m, nnz, csr_val,
-                                                                csr_col_ind, csr_row_ptr, srow_device, x, y,
-                                                                alpha, warps_in_block, warp_size);
+            abstract_load_balance_spmv<<<csr_grid, csr_block>>>(
+                nwarps, m, nnz, csr_val,
+                csr_col_ind, csr_row_ptr, srow_device, x, y,
+                alpha, warps_in_block, warp_size);
             // printf("\n+++++++++++++++++++++%d,%d,%d,%d,%d,%d,%d\n", nwarps, warps_in_block, warp_size, csr_grid.x, csr_grid.y, csr_block.x, csr_block.y);
             // printf("\n+++++++++++++++++++++%d,%d,%d,%d\n", csr_grid.x, csr_grid.y, csr_block.x, csr_block.y);
         }
@@ -419,7 +426,8 @@ alphasparseStatus_t spmv_csr_load(alphasparseHandle_t handle,
                                   const T *csr_col_ind,
                                   const U *x,
                                   const W beta,
-                                  V *y)
+                                  V *y,
+                                  void *externalBuffer)
 {
     const T SM = 80;
     const T MAX_WARP_PER_SM = 64;
@@ -430,7 +438,6 @@ alphasparseStatus_t spmv_csr_load(alphasparseHandle_t handle,
     // nwarps = 204800;
     // printf("nwarps:%d\n", nwarps);
     const T BLOCK_SIZE = 512;
-    const T GRIDSIZE = ceildivT<T>(nwarps, BLOCK_SIZE);
     // if (nwarps > m)
     // {
     //     double time1 = get_time_us();
@@ -449,20 +456,27 @@ alphasparseStatus_t spmv_csr_load(alphasparseHandle_t handle,
     // auto end_time = std::chrono::high_resolution_clock::now();
     // auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end_time - start_time);
     // std::cout << "balanced time: " << duration.count() << " nanoseconds" << std::endl;
-    T *partition;
-    cudaMalloc((void **)&partition, (nwarps) * sizeof(T));
-    const int64_t ave = ceildivT<int64_t>(nnz, warp_size);
-
-    cudaEvent_t event_start, event_stop;
-    float elapsed_time = 0.0;
-    GPU_TIMER_START(elapsed_time, event_start, event_stop);
-    balanced_partition_row_by_nnz<T, warp_size><<<dim3(GRIDSIZE), dim3(BLOCK_SIZE), 0, handle->stream>>>(csr_row_ptr + 1, m - 1, nwarps, partition, ave);
+    T *partition = (T *)externalBuffer;
+    const int maxbytes = BLOCK_SIZE * sizeof(int64_t);
+    const int64_t ave = ceildivT<T>(nnz, warp_size);
+    const T ave_row = ceildivT<T>(m, BLOCK_SIZE);
+    if (beta == W{})
+    {
+        cudaMemset(y, 0, sizeof(V) * m);
+        const T GRIDSIZE = ceildivT<T>(nwarps, BLOCK_SIZE);
+        balanced_partition_row_by_nnz<T, warp_size><<<dim3(GRIDSIZE), dim3(BLOCK_SIZE), 0, handle->stream>>>(
+            csr_row_ptr + 1, m - 1, nwarps, partition, ave);
+    }
+    else
+    {
+        const T GRIDSIZE = ceildivT<T>(nwarps + m, BLOCK_SIZE);
+        balanced_partition_row_by_nnz_and_scale_y<T, W, V, warp_size><<<dim3(GRIDSIZE), dim3(BLOCK_SIZE), maxbytes, handle->stream>>>(
+            csr_row_ptr + 1, m, nwarps, partition, ave, ave_row, beta, y);
+    }
     load_balance_spmv(m, n, nnz, alpha, partition, csr_row_ptr,
                       csr_col_ind, csr_val, x, beta, y,
                       nwarps, warp_size, warps_in_block);
     cudaDeviceSynchronize();
-    GPU_TIMER_END(elapsed_time, event_start, event_stop);
-    printf("load balance spmv time: %lf\n", elapsed_time);
 
     return ALPHA_SPARSE_STATUS_SUCCESS;
 }

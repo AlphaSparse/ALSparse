@@ -237,12 +237,12 @@ cuda_mm()
                                         &bufferSize2,
                                         NULL))
   GPU_TIMER_END(elapsed_time, event_start, event_stop);
-  std::cout << "cusparseSpGEMM_compute1 time: " << elapsed_time << " microseconds" << std::endl;
-  GPU_TIMER_START(elapsed_time, event_start, event_stop);
+  std::cout << "cusparseSpGEMM_compute1 time: " << elapsed_time << " microseconds, buffersize :" << bufferSize2 << std::endl;
+  double time1 = get_time_us();
   CHECK_CUDA(cudaMalloc((void**)&dBuffer2, bufferSize2))
-  GPU_TIMER_END(elapsed_time, event_start, event_stop);
-  std::cout << "cusparseSpGEMM_compute1 buffer time: " << elapsed_time << " microseconds" << std::endl;
-  elapsed_time_work += elapsed_time;
+  double time2 = get_time_us();
+  std::cout << "cusparseSpGEMM_compute1 buffer time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
+  elapsed_time_work += (time2 - time1) / (1e3);
   // compute the intermediate product of A * B
   CHECK_CUSPARSE(cusparseSpGEMM_compute(handle,
                                         CUSPARSE_OPERATION_NON_TRANSPOSE,
@@ -270,11 +270,11 @@ cuda_mm()
   CHECK_CUDA(cudaMalloc((void**)&dC_csrOffsets, (A_rows + 1) * sizeof(int)))
   // NOTE: if 'beta' != 0, the values of C must be update after the allocation
   //       of dC_values, and before the call of cusparseSpGEMM_copy
-
+  
   // update matC with the new pointers
   CHECK_CUSPARSE(
     cusparseCsrSetPointers(matC, dC_csrOffsets, dC_columns, dC_values))
-
+  
   // if beta != 0, cusparseSpGEMM_copy reuses/updates the values of dC_values
 
   // copy the final products to the matrix C
@@ -294,12 +294,23 @@ cuda_mm()
   // std::cout << "C_nnz1: " << C_nnz1 << std::endl;
   CHECK_CUDA(cudaMemcpy(
     matC_roc, dC_values, C_nnz1 * sizeof(double), cudaMemcpyDeviceToHost))
-  // int* cst_ptr = (int*)alpha_malloc((A_rows + 1) * sizeof(int));
-  // CHECK_CUDA(cudaMemcpy(
-  //   cst_ptr, dC_csrOffsets, (A_rows + 1) * sizeof(int), cudaMemcpyDeviceToHost))
-  // for(int i=0;i<A_rows + 1;i++){
-  //   printf("+%d+, ",cst_ptr[i]);
-  // }
+  int* cst_ptr = (int*)alpha_malloc((A_rows + 1) * sizeof(int));
+  int* col_ptr = (int*)alpha_malloc((C_nnz1 + 1) * sizeof(int));
+  CHECK_CUDA(cudaMemcpy(
+    cst_ptr, dC_csrOffsets, (A_rows + 1) * sizeof(int), cudaMemcpyDeviceToHost))
+  CHECK_CUDA(cudaMemcpy(
+    col_ptr, dC_columns, (C_nnz1) * sizeof(int), cudaMemcpyDeviceToHost))
+
+  std::cout << "cusparse row ptr " <<std::endl;
+  for (int i = 0; i < 20; i++) {
+    std::cout << cst_ptr[i] << ", ";
+  }
+  std::cout << std::endl;
+  std::cout << "cusparse col idx " <<std::endl;
+  for (int i = 0; i < 20; i++) {
+    std::cout << col_ptr[i] << ", ";
+  }
+  std::cout << std::endl;
   // destroy matrix/vector descriptors
   for (int i = 0; i < warm_up; i++)
   {
@@ -344,6 +355,7 @@ cuda_mm()
   CHECK_CUSPARSE(cusparseDestroySpMat(matC))
   CHECK_CUSPARSE(cusparseDestroy(handle))
   // Clear up on device
+  cudaFree(dBuffer2);
   cudaFree(dArow);
   cudaFree(dAcol);
   cudaFree(dAval);
@@ -437,13 +449,13 @@ alpha_mm()
   PRINT_IF_CUDA_ERROR(cudaMalloc((void**)&dCval, sizeof(double) * nnz));
   PRINT_IF_CUDA_ERROR(
     cudaMalloc((void**)&dCCsrRowPtr, sizeof(int) * (A_rows + 1)));
-  CHECK_CUDA(cudaMemcpy(
-    dCrow, coo_row_index, nnz * sizeof(int), cudaMemcpyHostToDevice));
-  CHECK_CUDA(cudaMemcpy(
-    dCcol, coo_col_index, nnz * sizeof(int), cudaMemcpyHostToDevice));
-  CHECK_CUDA(
-    cudaMemcpy(dCval, coo_values, nnz * sizeof(double), cudaMemcpyHostToDevice));
-  alphasparseXcoo2csr(dCrow, nnz, A_rows, dCCsrRowPtr);
+  // CHECK_CUDA(cudaMemcpy(
+  //   dCrow, coo_row_index, nnz * sizeof(int), cudaMemcpyHostToDevice));
+  // CHECK_CUDA(cudaMemcpy(
+  //   dCcol, coo_col_index, nnz * sizeof(int), cudaMemcpyHostToDevice));
+  // CHECK_CUDA(
+  //   cudaMemcpy(dCval, coo_values, nnz * sizeof(double), cudaMemcpyHostToDevice));
+  // alphasparseXcoo2csr(dCrow, nnz, A_rows, dCCsrRowPtr);
 
   alphasparseSpMatDescr_t matC;
   alphasparseCreateCsr(&matC,
@@ -482,9 +494,13 @@ alpha_mm()
                             &bufferSize2,
                             NULL);
   GPU_TIMER_END(elapsed_time, event_start, event_stop);
-  std::cout << "alphasparseSpGEMM_compute1 time: " << elapsed_time << " microseconds" << std::endl;
+  std::cout << "alphasparseSpGEMM_compute1 time: " << elapsed_time << " microseconds, buffersize :" << bufferSize2 << std::endl;
   
+  double time1 = get_time_us();
   cudaMalloc(&dBuffer2, bufferSize2);
+  double time2 = get_time_us();
+  std::cout << "alphasparseSpGEMM buffer malloc time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
+  double etime = elapsed_time + (time2 - time1) / (1e3);
   
   alphasparseSpGEMM_compute(handle,
                             ALPHA_SPARSE_OPERATION_NON_TRANSPOSE,
@@ -501,12 +517,33 @@ alpha_mm()
                             dBuffer2);
   // allocate matrix C
   nnz_c = matC->nnz;
+  // allocate matrix C
+  int *dC_csrOffsets = (int *)malloc((A_rows + 1) * sizeof(int));
+  int *dC_columns = (int *)malloc(nnz_c * sizeof(int));
   matC_ict = (double*)alpha_malloc(matC->nnz * sizeof(double));
+  CHECK_CUDA(cudaMemcpy(dC_csrOffsets,
+                        matC->row_data,
+                       (A_rows + 1) * sizeof(int),
+                        cudaMemcpyDeviceToHost))
+  CHECK_CUDA(cudaMemcpy(dC_columns,
+                        matC->col_data,
+                        matC->nnz * sizeof(int),
+                        cudaMemcpyDeviceToHost))
   CHECK_CUDA(cudaMemcpy(matC_ict,
                         matC->val_data,
                         matC->nnz * sizeof(double),
                         cudaMemcpyDeviceToHost))
-
+  std::cout << "alphasparse row ptr " <<std::endl;
+  for (int i = 0; i < 20; i++) {
+    std::cout << dC_csrOffsets[i] << ", ";
+  }
+  std::cout << std::endl;
+  std::cout << "alphasparse col idx " <<std::endl;
+  for (int i = 0; i < 20; i++) {
+    std::cout << dC_columns[i] << ", ";
+  }
+  std::cout << std::endl;
+  
   for (int i = 0; i < warm_up; i++)
   {
     alphasparseSpGEMM_compute(handle,
@@ -542,7 +579,7 @@ alpha_mm()
                               dBuffer2);
   }
   GPU_TIMER_END(elapsed_time, event_start, event_stop);
-  std::cout << "alphasparseSpGEMM_compute2 time: " << elapsed_time/trials << " microseconds" << std::endl;
+  std::cout << "alphasparseSpGEMM_compute2 time: " << elapsed_time/trials + etime<< " microseconds" << std::endl;
   
   // std::cout << "C_nnz2: " << matC->nnz << std::endl;
 
@@ -556,6 +593,7 @@ alpha_mm()
   cudaFree(dCrow);
   cudaFree(dCcol);
   cudaFree(dCval);
+  cudaFree(dBuffer2);
   alphasparse_destory_handle(handle);
 }
 
@@ -568,26 +606,28 @@ main(int argc, const char* argv[])
   transA = alpha_args_get_transA(argc, argv);
   transB = alpha_args_get_transB(argc, argv);
   trials = args_get_iter(argc, argv);
+  // cudaSetDevice(1);
   // read coo
   alpha_read_coo<double>(
     file, &A_rows, &A_cols, &rnnz, &coo_row_index, &coo_col_index, &coo_values);
   coo_order<int32_t, double>(rnnz, coo_row_index, coo_col_index, coo_values);
   columns = args_get_cols(argc, argv, A_rows); // 默认C是方阵
-  for (int i = 0; i < 20; i++) {
-    std::cout << coo_row_index[i] << ", ";
-  }
-  std::cout << std::endl;
-  for (int i = 0; i < 20; i++) {
-    std::cout << coo_col_index[i] << ", ";
-  }
-  std::cout << std::endl;
-  for (int i = 0; i < 20; i++) {
-    std::cout << coo_values[i] << ", ";
-  }
-  std::cout << std::endl;
+  // for (int i = 0; i < 20; i++) {
+  //   std::cout << coo_row_index[i] << ", ";
+  // }
+  // std::cout << std::endl;
+  // for (int i = 0; i < 20; i++) {
+  //   std::cout << coo_col_index[i] << ", ";
+  // }
+  // std::cout << std::endl;
+  // for (int i = 0; i < 20; i++) {
+  //   std::cout << coo_values[i] << ", ";
+  // }
+  // std::cout << std::endl;
 
   cuda_mm();
   alpha_mm();
+  
   std::cout << std::endl;
   for (int i = 0; i < 20; i++) {
     std::cout << matC_roc[i] << ", ";

@@ -1,6 +1,5 @@
 #include "alphasparse.h"
 #include <iostream>
-#include <cuda/std/complex>
 
 __global__ static void 
 findDiag(int m, const int *csrRowPtrA, const int *csrColIndA, int *diag_pos)

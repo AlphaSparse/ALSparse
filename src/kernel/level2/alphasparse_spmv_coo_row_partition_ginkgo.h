@@ -1,6 +1,5 @@
 #pragma once
 
-#include <cooperative_groups.h>
 #include "alphasparse.h"
 #include "alphasparse_spmv_csr_vector.h"
 #include <thrust/scan.h>
@@ -57,8 +56,7 @@ __device__ void coo_spmv_ginkgo_kernel(const IndexType warp_size,
     const IndexType ind_end = ind_start + (num - 1) * subwarp_size;
     IndexType ind = ind_start;
     IndexType curr_row = (ind < nnz) ? row[ind] : 0;
-    const auto tile_block =
-        tiled_partition<subwarp_size>(this_thread_block());
+    const auto tile_block = tiled_partition<subwarp_size>(this_thread_block());
     for (; ind < ind_end; ind += subwarp_size)
     {
         temp_val += (ind < nnz) ? val[ind] * b[col[ind] + column_id]
@@ -69,9 +67,7 @@ __device__ void coo_spmv_ginkgo_kernel(const IndexType warp_size,
         if (tile_block.any(curr_row != next_row))
         {
             bool is_first_in_segment = segment_scan<subwarp_size>(
-                tile_block, curr_row, temp_val,
-                [](ValueType a, ValueType b)
-                { return a + b; });
+                tile_block, curr_row, temp_val);
             if (is_first_in_segment)
             {
                 atomicAdd(&(c[curr_row + column_id]),
@@ -88,9 +84,7 @@ __device__ void coo_spmv_ginkgo_kernel(const IndexType warp_size,
                                 : ValueType{};
         // segmented scan
         bool is_first_in_segment = segment_scan<subwarp_size>(
-            tile_block, curr_row, temp_val,
-            [](ValueType a, ValueType b)
-            { return a + b; });
+            tile_block, curr_row, temp_val);
         if (is_first_in_segment)
         {
             atomicAdd(&(c[curr_row + column_id]), scale(temp_val));
