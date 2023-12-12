@@ -588,15 +588,11 @@ void MultiplyspECKImplementation(
             }
         }
     }
-    printf("h_blockCounterScaleCounting ");
-        for(int i = 0; i < kernelCountNumeric; i++) 
-            printf("%d ", h_blockCounterScaleCounting[i]); 
-        printf("\n");
+
     // -------------------------------------------------------------------------------------------------------------------------------------------
     //  COUNT NNZ PER ROW OF C
     // -------------------------------------------------------------------------------------------------------------------------------------------
     {   
-        double time1 = get_time_us();
         if (h_blockCounterScaleCounting[0] > 0)
         {
             if (isDenseCounting)
@@ -617,10 +613,7 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
             }
         }
-        HANDLE_ERROR(cudaDeviceSynchronize());       
-        double time2 = get_time_us();
-        std::cout << "h_SpGEMMCountLauncher 0 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
-        time1 = get_time_us(); 
+    
         if (kernelCountCounting > 1 && h_blockCounterScaleCounting[1] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[1], streams[1], 32 * warpsCounting >> 0, sharedBytesPerBlockCounting >> 0);
@@ -629,10 +622,7 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[1], h_blockCounterScaleCounting[1], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
-        HANDLE_ERROR(cudaDeviceSynchronize());
-        time2 = get_time_us();
-        std::cout << "h_SpGEMMCountLauncher 1 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
-        time1 = get_time_us(); 
+
         if (kernelCountCounting > 2 && h_blockCounterScaleCounting[2] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[2], streams[2], (32 * warpsCounting >> 1), sharedBytesPerBlockCounting >> 1);
@@ -641,10 +631,7 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[2], h_blockCounterScaleCounting[2], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
-        HANDLE_ERROR(cudaDeviceSynchronize());
-        time2 = get_time_us();
-        std::cout << "h_SpGEMMCountLauncher 2 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
-        time1 = get_time_us(); 
+
         if (kernelCountCounting > 3 && h_blockCounterScaleCounting[3] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[3], streams[3], (32 * warpsCounting >> 2), sharedBytesPerBlockCounting >> 2);
@@ -653,10 +640,7 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[3], h_blockCounterScaleCounting[3], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
-        HANDLE_ERROR(cudaDeviceSynchronize());
-        time2 = get_time_us();
-        std::cout << "h_SpGEMMCountLauncher 3 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
-        time1 = get_time_us(); 
+
         if (kernelCountCounting > 4 && h_blockCounterScaleCounting[4] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[4], streams[4], 32 * warpsCounting >> 3, sharedBytesPerBlockCounting >> 3);
@@ -665,10 +649,7 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[4], h_blockCounterScaleCounting[4], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
-        HANDLE_ERROR(cudaDeviceSynchronize());
-        time2 = get_time_us();
-        std::cout << "h_SpGEMMCountLauncher 4 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
-        time1 = get_time_us(); 
+
         if (kernelCountCounting > 5 && h_blockCounterScaleCounting[5] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[5], streams[5], 32 * warpsCounting >> 4, sharedBytesPerBlockCounting >> 4);
@@ -676,10 +657,7 @@ void MultiplyspECKImplementation(
                 matA, matB, (GlobalMapNoValue *)hashMaps, hashMapCount, nullptr, 0, (IndexType *)matC->row_data, d_rowOperations,
                 d_blockStartRows + blockPrefixScaled[5], h_blockCounterScaleCounting[5], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
-        }
-        HANDLE_ERROR(cudaDeviceSynchronize());
-        time2 = get_time_us();
-        std::cout << "h_SpGEMMCountLauncher 5 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
+        }     
     }    
     // -------------------------------------------------------------------------------------------------------------------------------------------
     //  SCAN ROW OFFSETS AND GET NNZ OF C
@@ -701,7 +679,7 @@ void MultiplyspECKImplementation(
         HANDLE_ERROR(cudaMemcpy(&nnz, (IndexType *)matC->row_data + matC->rows, sizeof(IndexType), cudaMemcpyDeviceToHost));
         tnnz = nnz;
     }
-
+    printf("nnz %d\n",tnnz);
     if(tnnz != matC->nnz)
     {
         matC->nnz = tnnz;
@@ -924,11 +902,7 @@ void MultiplyspECKImplementation(
 
         Config::SpGEMMMethods spGemmMethodNumeric = Config::AutoSpGEMM;
         // Config::SpGEMMMethods spGemmMethodNumeric = Config::DenseSpGEMM;
-        printf("h_blockCounterScaleNumeric ");
-        for(int i = 0; i < kernelCountNumeric; i++) 
-            printf("%d ", h_blockCounterScaleNumeric[i]); 
-        printf("\n");
-        double time1 = get_time_us();
+
         // -------------------------------------------------------------------------------------------------------------------------------------------
         //  NUMERIC SPGEMM
         // -------------------------------------------------------------------------------------------------------------------------------------------
@@ -950,16 +924,13 @@ void MultiplyspECKImplementation(
         //         h_blockCounterScaleNumeric[0], d_rowColMinMax, 
         //         d_rowMaxOperations, denseModeRowThresholdExternalSorting, false, rowsPerBlock);
         // }
-        HANDLE_ERROR(cudaDeviceSynchronize());
-        double time2 = get_time_us();
-        std::cout << "h_HashSpGEMMNumeric 0 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;     
+
         sortMode = sortAllInplace ? Config::InPlace : Config::Separate;
         // HANDLE_ERROR(cudaDeviceSynchronize());
         // IndexType * tmp = (IndexType*)malloc(sizeof(IndexType)*(50));
         // HANDLE_ERROR(cudaMemcpy(tmp, (IndexType *)matC->col_data, sizeof(IndexType)*(50), cudaMemcpyDeviceToHost));
         // for(int i = 0; i < 50; i++) printf("tmp[%d]=%d\n",i,tmp[i]);
         bool setSortingBit = sortAllInplace ? false : maxElementsPerRow >= 500;
-        time1 = get_time_us();
         if (kernelCountNumeric > 1 && h_blockCounterScaleNumeric[1] > 0)
         {   
             if (spGemmMethodNumeric == Config::AutoSpGEMM)
@@ -992,10 +963,7 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, setSortingBit, rowsPerBlock);
             }
         }
-        HANDLE_ERROR(cudaDeviceSynchronize());
-        time2 = get_time_us();
-        std::cout << "h_HashSpGEMMNumeric 1 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;        
-        time1 = get_time_us();
+   
         if (kernelCountNumeric > 2 && h_blockCounterScaleNumeric[2] > 0)
         {
             if (spGemmMethodNumeric == Config::AutoSpGEMM)
@@ -1028,10 +996,7 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, setSortingBit, rowsPerBlock);
             }
         }
-        HANDLE_ERROR(cudaDeviceSynchronize());
-        time2 = get_time_us();
-        std::cout << "h_HashSpGEMMNumeric 2 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
-        time1 = get_time_us();
+
         sortMode = Config::InPlace;
 
         if (kernelCountNumeric > 3 && h_blockCounterScaleNumeric[3] > 0)
@@ -1066,10 +1031,7 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, false, rowsPerBlock);
             }
         }
-        HANDLE_ERROR(cudaDeviceSynchronize());
-        time2 = get_time_us();
-        std::cout << "h_HashSpGEMMNumeric 3 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
-        time1 = get_time_us();
+
         if (kernelCountNumeric > 4 && h_blockCounterScaleNumeric[4] > 0)
         {
             if (spGemmMethodNumeric == Config::AutoSpGEMM)
@@ -1102,10 +1064,7 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, false, rowsPerBlock);
             }
         }
-        HANDLE_ERROR(cudaDeviceSynchronize());
-        time2 = get_time_us();
-        std::cout << "h_HashSpGEMMNumeric 4 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
-        time1 = get_time_us();
+
         if (kernelCountNumeric > 5 && h_blockCounterScaleNumeric[5] > 0)
         {
             if (spGemmMethodNumeric == Config::AutoSpGEMM || ((rowsPerBlock > 1 || reprocessLoadBalanceNumeric) && spGemmMethodNumeric != Config::HashSpGEMM))
@@ -1139,9 +1098,6 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, false, rowsPerBlock);
             }
         }
-        HANDLE_ERROR(cudaDeviceSynchronize());
-        time2 = get_time_us();
-        std::cout << "h_HashSpGEMMNumeric 5 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
     }
     
     // mul_alpha<IndexType, DataType><<<1024, 256>>>((DataType *)matC->val_data,(IndexType)matC->nnz,alpha);

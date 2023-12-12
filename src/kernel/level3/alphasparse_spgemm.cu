@@ -4,6 +4,7 @@
 #include "alphasparse_spgemm_speck_csr.h"
 #include "alphasparse_spgemm_fast_csr.h"
 #include "alphasparse_spgemm_amgx_csr.h"
+#include "alphasparse_spgemm_opsp_csr.h"
 #include "alphasparse_spgemm_ns_csr.h"
 // #include "alphasparse_spgemm_ac_csr.h"
 #include <iostream>
@@ -14,7 +15,8 @@ static constexpr int spECK_STATIC_MEM_PER_BLOCK {49152};
 // - 98304 for Volta devices (cc7.0)
 // - 101376 for Ampere consumer devices (RTX 30xx) (cc8.6)
 // - 166912 for Ampere professional devices (e.g. A100) (cc8.0)
-static constexpr int spECK_DYNAMIC_MEM_PER_BLOCK{98304};
+// static constexpr int spECK_DYNAMIC_MEM_PER_BLOCK{98304};//V100
+static constexpr int spECK_DYNAMIC_MEM_PER_BLOCK{166912};//A100
 
 size_t get_dataSize(alphasparseDataType D)
 {
@@ -188,6 +190,27 @@ spgemm_acsp_template(alphasparseHandle_t handle,
 
 template<typename T, typename U>
 alphasparseStatus_t
+spgemm_opsp_template(alphasparseHandle_t handle,
+                    alphasparseOperation_t opA,
+                    alphasparseOperation_t opB,
+                    const void* alpha,
+                    alphasparseSpMatDescr_t matA,
+                    alphasparseSpMatDescr_t matB,
+                    const void* beta,
+                    alphasparseSpMatDescr_t matC,
+                    void * externalBuffer2)
+{
+  switch (matA->format) {
+    case ALPHA_SPARSE_FORMAT_CSR: {     
+      spgemm_csr_op<T, U>(handle, opA, opB, *((U*)alpha), matA, matB, *((U*)beta), matC, externalBuffer2);
+      break;
+    }
+  }
+  return ALPHA_SPARSE_STATUS_NOT_SUPPORTED;
+}
+
+template<typename T, typename U>
+alphasparseStatus_t
 spgemm_copy_template(alphasparseHandle_t handle,
                     alphasparseOperation_t opA,
                     alphasparseOperation_t opB,
@@ -288,13 +311,13 @@ alphasparseSpGEMM_compute(alphasparseHandle_t handle,
   if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
       matA->data_type == ALPHA_R_32F && matC->data_type == ALPHA_R_32F) {
     // return spgemm_speck_template<uint32_t, float>(
-      return spgemm_template<int32_t, double>(
+      return spgemm_opsp_template<uint32_t, float>(
       handle, opA, opB, alpha, matA, matB, beta, matC, externalBuffer2);
   }
   if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
       matA->data_type == ALPHA_R_64F && matC->data_type == ALPHA_R_64F) {
     // return spgemm_template<int32_t, double>(
-    return spgemm_speck_template<uint32_t, double>(
+    return spgemm_opsp_template<uint32_t, double>(
       // return spgemm_acsp_template<uint32_t, double>(
       handle, opA, opB, alpha, matA, matB, beta, matC, externalBuffer2);
   }
