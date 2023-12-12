@@ -588,10 +588,7 @@ void MultiplyspECKImplementation(
             }
         }
     }
-    printf("h_blockCounterScaleCounting ");
-        for(int i = 0; i < kernelCountNumeric; i++) 
-            printf("%d ", h_blockCounterScaleCounting[i]); 
-        printf("\n");
+
     // -------------------------------------------------------------------------------------------------------------------------------------------
     //  COUNT NNZ PER ROW OF C
     // -------------------------------------------------------------------------------------------------------------------------------------------
@@ -625,6 +622,7 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[1], h_blockCounterScaleCounting[1], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
+
         if (kernelCountCounting > 2 && h_blockCounterScaleCounting[2] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[2], streams[2], (32 * warpsCounting >> 1), sharedBytesPerBlockCounting >> 1);
@@ -633,6 +631,7 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[2], h_blockCounterScaleCounting[2], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
+
         if (kernelCountCounting > 3 && h_blockCounterScaleCounting[3] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[3], streams[3], (32 * warpsCounting >> 2), sharedBytesPerBlockCounting >> 2);
@@ -641,6 +640,7 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[3], h_blockCounterScaleCounting[3], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
+
         if (kernelCountCounting > 4 && h_blockCounterScaleCounting[4] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[4], streams[4], 32 * warpsCounting >> 3, sharedBytesPerBlockCounting >> 3);
@@ -649,6 +649,7 @@ void MultiplyspECKImplementation(
                 d_blockStartRows + blockPrefixScaled[4], h_blockCounterScaleCounting[4], d_rowColMinMax,
                 d_rowMaxOperations, minimumDensityForDenseModeCounting, d_maxElementsPerRow, rowsPerBlock);
         }
+
         if (kernelCountCounting > 5 && h_blockCounterScaleCounting[5] > 0)
         {
             spgemm.setLaunchDimensions(h_blockCounterScaleCounting[5], streams[5], 32 * warpsCounting >> 4, sharedBytesPerBlockCounting >> 4);
@@ -901,6 +902,7 @@ void MultiplyspECKImplementation(
 
         Config::SpGEMMMethods spGemmMethodNumeric = Config::AutoSpGEMM;
         // Config::SpGEMMMethods spGemmMethodNumeric = Config::DenseSpGEMM;
+
         // -------------------------------------------------------------------------------------------------------------------------------------------
         //  NUMERIC SPGEMM
         // -------------------------------------------------------------------------------------------------------------------------------------------
@@ -922,6 +924,7 @@ void MultiplyspECKImplementation(
         //         h_blockCounterScaleNumeric[0], d_rowColMinMax, 
         //         d_rowMaxOperations, denseModeRowThresholdExternalSorting, false, rowsPerBlock);
         // }
+
         sortMode = sortAllInplace ? Config::InPlace : Config::Separate;
         // HANDLE_ERROR(cudaDeviceSynchronize());
         // IndexType * tmp = (IndexType*)malloc(sizeof(IndexType)*(50));
@@ -993,6 +996,7 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, setSortingBit, rowsPerBlock);
             }
         }
+
         sortMode = Config::InPlace;
 
         if (kernelCountNumeric > 3 && h_blockCounterScaleNumeric[3] > 0)
@@ -1027,6 +1031,7 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, false, rowsPerBlock);
             }
         }
+
         if (kernelCountNumeric > 4 && h_blockCounterScaleNumeric[4] > 0)
         {
             if (spGemmMethodNumeric == Config::AutoSpGEMM)
@@ -1059,6 +1064,7 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, false, rowsPerBlock);
             }
         }
+
         if (kernelCountNumeric > 5 && h_blockCounterScaleNumeric[5] > 0)
         {
             if (spGemmMethodNumeric == Config::AutoSpGEMM || ((rowsPerBlock > 1 || reprocessLoadBalanceNumeric) && spGemmMethodNumeric != Config::HashSpGEMM))
@@ -1092,9 +1098,6 @@ void MultiplyspECKImplementation(
                     d_rowMaxOperations, false, rowsPerBlock);
             }
         }
-        HANDLE_ERROR(cudaDeviceSynchronize());
-        time2 = get_time_us();
-        std::cout << "h_HashSpGEMMNumeric 5 time: " << (time2 - time1) / (1e3) << " microseconds" << std::endl;
     }
     
     // mul_alpha<IndexType, DataType><<<1024, 256>>>((DataType *)matC->val_data,(IndexType)matC->nnz,alpha);
