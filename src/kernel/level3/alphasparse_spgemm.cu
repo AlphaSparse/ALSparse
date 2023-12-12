@@ -32,6 +32,20 @@ size_t get_dataSize(alphasparseDataType D)
   }
 }
 
+size_t get_dataSize(alphasparseDataType D)
+{
+  switch (D)
+  {
+    case ALPHA_R_32F: return sizeof(float); 
+    case ALPHA_R_64F: return sizeof(double); 
+    case ALPHA_C_32F: return sizeof(float)*2; 
+    case ALPHA_C_64F: return sizeof(double)*2; 
+    case ALPHA_R_16F: return sizeof(float); 
+    case ALPHA_C_16F: return sizeof(double); 
+    default : return sizeof(double);
+  }
+}
+
 template<typename T, typename U>
 alphasparseStatus_t
 spgemm_template(alphasparseHandle_t handle,
