@@ -45,7 +45,7 @@ const float beta = 3.2f;
 
 std::vector<double> cuda_time_list, alpha_time_list, cuda_bandwidth_list, alpha_bandwidth_list, cuda_gflops_list, alpha_gflops_list;
 std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT, CUSPARSE_SPMV_CSR_ALG1, CUSPARSE_SPMV_CSR_ALG2};
-std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ALG_MERGE};
+std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ALG_VECTOR};
 // std::vector<cusparseSpMVAlg_t> cu_alg_list = {CUSPARSE_SPMV_ALG_DEFAULT};
 // std::vector<alphasparseSpMVAlg_t> alpha_alg_list = {ALPHA_SPARSE_SPMV_ADAPTIVE};
 
@@ -126,6 +126,7 @@ cuda_mv()
     for (int i = 0; i < warm_up; ++i)
     {
       // double time2 = get_time_us();
+      CHECK_CUDA(cudaMemcpy(dY, cuda_y, m * sizeof(float), cudaMemcpyHostToDevice));
       CHECK_CUSPARSE(cusparseSpMV(handle,
                                   CUSPARSE_OPERATION_NON_TRANSPOSE,
                                   &alpha,
@@ -136,12 +137,12 @@ cuda_mv()
                                   CUDA_R_32F,
                                   alg,
                                   dBuffer));
-      cudaDeviceSynchronize();
       // time2 = (get_time_us() - time2) / (1e3);
       // printf("\n==========================\n");
       // printf("warmup_time:%lf",time2);
       // printf("\n==========================\n");
     }
+    cudaDeviceSynchronize();
     std::vector<double> times;
     for (int i = 0; i < trials; ++i)
     {
@@ -157,11 +158,11 @@ cuda_mv()
                                   CUDA_R_32F,
                                   alg,
                                   dBuffer));
-      cudaDeviceSynchronize();
       GPU_TIMER_END(elapsed_time, event_start, event_stop);
       // printf("\ncompute_time:%lf", time);
       times.push_back(elapsed_time);
     }
+    cudaDeviceSynchronize();
     double time = get_avg_time(times);
     printf("cusparse %d: %lf ms\n", alg, time);
     double bandwidth = static_cast<double>(sizeof(float)) * (2 * m + nnz) + sizeof(int) * (m + 1 + nnz) / time / 1e6;
@@ -254,6 +255,7 @@ alpha_mv()
     CHECK_CUDA(cudaMalloc(&dBuffer, bufferSize));
     for (int i = 0; i < warm_up; ++i)
     {
+      CHECK_CUDA(cudaMemcpy(dY, ict_y, m * sizeof(float), cudaMemcpyHostToDevice));
       alphasparseSpMV(handle,
                       ALPHA_SPARSE_OPERATION_NON_TRANSPOSE,
                       &alpha,
@@ -264,8 +266,8 @@ alpha_mv()
                       ALPHA_R_32F,
                       alg,
                       dBuffer);
-      cudaDeviceSynchronize();
     }
+    cudaDeviceSynchronize();
     std::vector<double> times;
     for (int i = 0; i < trials; ++i)
     {
@@ -281,10 +283,10 @@ alpha_mv()
                       ALPHA_R_32F,
                       alg,
                       dBuffer);
-      cudaDeviceSynchronize();
       GPU_TIMER_END(elapsed_time, event_start, event_stop);
       times.push_back(elapsed_time);
     }
+    cudaDeviceSynchronize();
     double time = get_avg_time(times);
     printf("alphasparse %d: %lf ms\n", alg, time);
     // double bandwidth = static_cast<double>(sizeof(float)) * (2 * m + nnz) + sizeof(int) * (m + 1 + nnz) / time / 1e6;
@@ -337,7 +339,7 @@ int main(int argc, const char *argv[])
   //   std::cout << cuda_y[i] << ", ";
   // }
   printf("\n");
-  warm_up = 100;
+  warm_up = 1000;
   trials = 100;
   cuda_mv();
   alpha_mv();
@@ -355,12 +357,12 @@ int main(int argc, const char *argv[])
   // filename.close();
   // for (int i = 0; i < 20; i++)
   // {
-  //   std::cout << ict_y[i] - 1 << ", ";
+  //   std::cout << ict_y[i] << ", ";
   // }
   // std::cout << std::endl;
   // for (int i = 0; i < 20; i++)
   // {
-  //   std::cout << cuda_y[i] - 1 << ", ";
+  //   std::cout << cuda_y[i] << ", ";
   // }
   // std::cout << std::endl;
   // for (int i = 0; i < m; i++)
