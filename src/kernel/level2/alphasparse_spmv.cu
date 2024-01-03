@@ -13,6 +13,8 @@
 #include "alphasparse_spmv_csr_adaptive.h"
 #include "alphasparse_spmv_csr_adaptive2.h"
 #include "alphasparse_spmv_coo_row_partition_ginkgo.h"
+#include "alphasparse_spmv_csr_flat.h"
+#include "alphasparse_spmv_csr_line_enhance.h"
 #include <iostream>
 
 template <typename T, typename U, typename V, typename W>
@@ -172,6 +174,70 @@ spmv_template(alphasparseHandle_t handle,
                                      (V *)vecY->values);
       break;
     }
+    case ALPHA_SPARSE_SPMV_ALG_LINE:
+    {
+      spmv_csr_line_adaptive<T, U, V, W>(handle,
+                                      (T)matA->rows,
+                                      (T)matA->cols,
+                                      (T)matA->nnz,
+                                      *((W *)alpha),
+                                      (U *)matA->val_data,
+                                      (T *)matA->row_data,
+                                      (T *)matA->col_data,
+                                      (U *)vecX->values,
+                                      *((W *)beta),
+                                      (V *)vecY->values,
+                                      externalBuffer);
+      break;
+    }
+    case ALPHA_SPARSE_SPMV_ALG_FLAT1:
+    {
+      spmv_csr_flat<T, U, V, W, 1>(handle,
+                                      (T)matA->rows,
+                                      (T)matA->cols,
+                                      (T)matA->nnz,
+                                      *((W *)alpha),
+                                      (U *)matA->val_data,
+                                      (T *)matA->row_data,
+                                      (T *)matA->col_data,
+                                      (U *)vecX->values,
+                                      *((W *)beta),
+                                      (V *)vecY->values,
+                                      externalBuffer);
+      break;
+    }
+    case ALPHA_SPARSE_SPMV_ALG_FLAT4:
+    {
+      spmv_csr_flat<T, U, V, W, 4>(handle,
+                                      (T)matA->rows,
+                                      (T)matA->cols,
+                                      (T)matA->nnz,
+                                      *((W *)alpha),
+                                      (U *)matA->val_data,
+                                      (T *)matA->row_data,
+                                      (T *)matA->col_data,
+                                      (U *)vecX->values,
+                                      *((W *)beta),
+                                      (V *)vecY->values,
+                                      externalBuffer);
+      break;
+    }
+    case ALPHA_SPARSE_SPMV_ALG_FLAT8:
+    {
+      spmv_csr_flat<T, U, V, W, 8>(handle,
+                                      (T)matA->rows,
+                                      (T)matA->cols,
+                                      (T)matA->nnz,
+                                      *((W *)alpha),
+                                      (U *)matA->val_data,
+                                      (T *)matA->row_data,
+                                      (T *)matA->col_data,
+                                      (U *)vecX->values,
+                                      *((W *)beta),
+                                      (V *)vecY->values,
+                                      externalBuffer);
+      break;
+    }
     }
     break;
   }
@@ -237,12 +303,12 @@ alphasparseSpMV(alphasparseHandle_t handle,
                          cuDoubleComplex>(
         handle, opA, alpha, matA, vecX, beta, vecY, alg, externalBuffer);
   }
-  if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
-      matA->data_type == ALPHA_R_16F && vecY->data_type == ALPHA_R_16F)
-  {
-    return spmv_template<int32_t, half, half, float>(
-        handle, opA, alpha, matA, vecX, beta, vecY, alg, externalBuffer);
-  }
+  // if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
+  //     matA->data_type == ALPHA_R_16F && vecY->data_type == ALPHA_R_16F)
+  // {
+  //   return spmv_template<int32_t, half, half, float>(
+  //       handle, opA, alpha, matA, vecX, beta, vecY, alg, externalBuffer);
+  // }
   // if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
   //     matA->data_type == ALPHA_C_16F && vecY->data_type == ALPHA_C_16F)
   // {
@@ -362,6 +428,33 @@ alphasparseSpMV_bufferSize(alphasparseHandle_t handle,
     else if (computeType == ALPHA_C_64F)
       typeSize = 16;
     *bufferSize = nwarps * typeSize;
+    break;
+  }
+  case ALPHA_SPARSE_SPMV_ALG_FLAT1:
+  {
+    constexpr int R = 2;
+    const int BLOCK_SIZE = 512;
+    const int nnz_per_block = R * BLOCK_SIZE;
+    const int nwarps = ceildivT<int>(matA->nnz, nnz_per_block);
+    *bufferSize = (nwarps + 1) * sizeof(int);
+    break;
+  }
+  case ALPHA_SPARSE_SPMV_ALG_FLAT4:
+  {
+    constexpr int R = 2;
+    const int BLOCK_SIZE = 512;
+    const int nnz_per_block = R * BLOCK_SIZE;
+    const int nwarps = ceildivT<int>(matA->nnz, nnz_per_block);
+    *bufferSize = (nwarps + 1) * sizeof(int);
+    break;
+  }
+  case ALPHA_SPARSE_SPMV_ALG_FLAT8:
+  {
+    constexpr int R = 2;
+    const int BLOCK_SIZE = 512;
+    const int nnz_per_block = R * BLOCK_SIZE;
+    const int nwarps = ceildivT<int>(matA->nnz, nnz_per_block);
+    *bufferSize = (nwarps + 1) * sizeof(int);
     break;
   }
   }
