@@ -103,7 +103,7 @@ static __device__ void DifMul_1(CSparseVector<T>& dst, CSparseVector<T>& a, CSpa
 
 	const int intMax=2147483647;//used to signal that a row is finished
 	T* rowValues;uint* rowIndices;int rowLength=0;//The row for the thread
-	T weight=0;//The weight for the row
+	uint weight=0;//The weight for the row
 	if(threadIdx.x<a.NonZeroCount()){
 		uint r=ldg(a.Indices()+threadIdx.x);//uint rowIndex=a.Index(thread);		
 		uint rowStart=ldg(B.RowStarts()+r);
@@ -116,7 +116,7 @@ static __device__ void DifMul_1(CSparseVector<T>& dst, CSparseVector<T>& a, CSpa
 
 	int rowPos=0;//Current position into row
 	int frontIndex=intMax;//The front index of the row. intMax means that the row ended.
-	T frontValue(0);//the front of the row of the thread
+	T frontValue = T{};//the front of the row of the thread
 	if(rowPos<rowLength){//Load the front index and row
 		frontIndex=ldg(rowIndices+rowPos);//ldg: explicit cache usage
 		frontValue=ldg(rowValues+rowPos)*weight;//ldg: explicit cache usage
@@ -132,7 +132,7 @@ static __device__ void DifMul_1(CSparseVector<T>& dst, CSparseVector<T>& a, CSpa
 	T bufferedValue;
 	int bufferPos=0;//how many elements are in the buffer
 	while(minFront!=intMax){//Compute one element per iteration
-		T tmp=0.0;//Used to compute the value
+		T tmp= T{};//Used to compute the value
 		if(frontIndex==minFront){//put these into tmp and load next elements
 			tmp=frontValue;
 			//load next

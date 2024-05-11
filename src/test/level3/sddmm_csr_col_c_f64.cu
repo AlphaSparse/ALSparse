@@ -29,13 +29,13 @@ int *coo_row_index, *coo_col_index;
 cuDoubleComplex* coo_values;
 
 // parms for kernel
-cuDoubleComplex *hmatA, *hmatB, *matC_ict, *matC_cuda;
+cuDoubleComplex *hmatA, *hmatB, *matC_ict, *matC_cuda, *matC_cpu;
 long long A_rows, A_cols;
 long long B_rows, B_cols;
 long long lda, ldb;
 long long A_size, B_size;
-const cuDoubleComplex alpha = {1.1f,2.4f};
-const cuDoubleComplex beta = {3.2f,4.3f};
+const cuDoubleComplex alpha = {2.f, 1.0f};
+const cuDoubleComplex beta = {3.f, 1.0f};
 
 #define CHECK_CUDA(func)                                                       \
     {                                                                            \
@@ -62,15 +62,73 @@ const cuDoubleComplex beta = {3.2f,4.3f};
     }
 
 static void
+cpu_sddmm()
+{
+    //--------------------------------------------------------------------------
+    // Device memory management
+    int   *dC_offsets, *dC_columns, *dCCsrRowPtr, *HCCsrRowPtr;
+    cuDoubleComplex *dC_values, *dB, *dA;
+    HCCsrRowPtr = (int *)malloc(sizeof(int) * (C_rows + 1));
+
+    cudaMalloc((void**) &dC_offsets,
+                            rnnz * sizeof(int));
+    cudaMalloc((void**) &dCCsrRowPtr,
+                            (C_rows + 1) * sizeof(int));
+
+    CHECK_CUDA( cudaMemcpy(dC_offsets, coo_row_index,
+                            rnnz * sizeof(int),
+                            cudaMemcpyHostToDevice) )
+
+    alphasparseXcoo2csr(dC_offsets, rnnz, C_rows, dCCsrRowPtr);
+    CHECK_CUDA( cudaMemcpy(HCCsrRowPtr, dCCsrRowPtr,
+                            (C_rows + 1) * sizeof(int),
+                            cudaMemcpyDeviceToHost) )
+    
+    int ldc = A_rows;
+    cuDoubleComplex *hmatC = (cuDoubleComplex *)malloc(sizeof(cuDoubleComplex) * ldc * C_cols);
+    memset(hmatC, '\0', sizeof(cuDoubleComplex) * ldc * C_cols);
+    for (int i = 0; i < C_rows; i++) //M
+    {        
+        for (int j = 0; j < C_rows; j++)  //N
+        {
+            for(int p = 0; p < A_cols; p++)  //K
+            {
+                long long inda = i + p * lda;
+                long long indb = p + j * ldb;
+                long long indc = i + j * ldc;
+                hmatC[indc] = cuCadd(hmatC[indc], cuCmul(hmatA[inda], hmatB[indb]));
+            }
+        }
+    }
+
+    for(int rows = 0; rows < C_rows; rows ++)
+    {
+        for(int r = HCCsrRowPtr[rows]; r < HCCsrRowPtr[rows + 1]; r ++)
+        {
+            int col = coo_col_index[r];
+            matC_cpu[r] = cuCadd(cuCmul(alpha, hmatC[rows + col * ldc]), cuCmul(beta, coo_values[r]));
+        }
+    }
+
+    //--------------------------------------------------------------------------
+    // device result check
+    CHECK_CUDA( cudaFree(dCCsrRowPtr) )
+    CHECK_CUDA( cudaFree(dC_offsets) )
+    free(hmatC);
+}
+
+static void
 cuda_sddmm()
 {
     //--------------------------------------------------------------------------
     // Device memory management
-    int   *dC_offsets, *dC_columns;
+    int   *dC_offsets, *dC_columns, *dCCsrRowPtr;
     cuDoubleComplex *dC_values, *dB, *dA;
     CHECK_CUDA( cudaMalloc((void**) &dA, A_size * sizeof(cuDoubleComplex)) )
     CHECK_CUDA( cudaMalloc((void**) &dB, B_size * sizeof(cuDoubleComplex)) )
     CHECK_CUDA( cudaMalloc((void**) &dC_offsets,
+                            rnnz * sizeof(int)) )
+    CHECK_CUDA( cudaMalloc((void**) &dCCsrRowPtr,
                             (C_rows + 1) * sizeof(int)) )
     CHECK_CUDA( cudaMalloc((void**) &dC_columns, rnnz * sizeof(int))   )
     CHECK_CUDA( cudaMalloc((void**) &dC_values,  rnnz * sizeof(cuDoubleComplex)) )
@@ -80,12 +138,13 @@ cuda_sddmm()
     CHECK_CUDA( cudaMemcpy(dB, hmatB, B_size * sizeof(cuDoubleComplex),
                             cudaMemcpyHostToDevice) )
     CHECK_CUDA( cudaMemcpy(dC_offsets, coo_row_index,
-                            (C_rows + 1) * sizeof(int),
+                            rnnz * sizeof(int),
                             cudaMemcpyHostToDevice) )
     CHECK_CUDA( cudaMemcpy(dC_columns, coo_col_index, rnnz * sizeof(int),
                             cudaMemcpyHostToDevice) )
     CHECK_CUDA( cudaMemcpy(dC_values, coo_values, rnnz * sizeof(cuDoubleComplex),
                             cudaMemcpyHostToDevice) )
+    alphasparseXcoo2csr(dC_offsets, rnnz, C_rows, dCCsrRowPtr);
     //--------------------------------------------------------------------------
     // CUSPARSE APIs
     cusparseHandle_t     handle = NULL;
@@ -102,7 +161,7 @@ cuda_sddmm()
                                         CUDA_C_64F, CUSPARSE_ORDER_COL) )
     // Create sparse matrix C in CSR format
     CHECK_CUSPARSE( cusparseCreateCsr(&matC, C_rows, C_cols, rnnz,
-                                        dC_offsets, dC_columns, dC_values,
+                                        dCCsrRowPtr, dC_columns, dC_values,
                                         CUSPARSE_INDEX_32I, CUSPARSE_INDEX_32I,
                                         CUSPARSE_INDEX_BASE_ZERO, CUDA_C_64F) )
     // allocate an external buffer if needed
@@ -159,11 +218,13 @@ alpha_sddmm()
 {
     //--------------------------------------------------------------------------
     // Device memory management
-    int   *dC_offsets, *dC_columns;
+    int   *dC_offsets, *dC_columns, *dCCsrRowPtr;
     cuDoubleComplex *dC_values, *dB, *dA;
     cudaMalloc((void**) &dA, A_size * sizeof(cuDoubleComplex));
     cudaMalloc((void**) &dB, B_size * sizeof(cuDoubleComplex));
     cudaMalloc((void**) &dC_offsets,
+                            rnnz * sizeof(int));
+    cudaMalloc((void**) &dCCsrRowPtr,
                             (C_rows + 1) * sizeof(int));
     cudaMalloc((void**) &dC_columns, rnnz * sizeof(int));
     cudaMalloc((void**) &dC_values,  rnnz * sizeof(cuDoubleComplex));
@@ -173,14 +234,15 @@ alpha_sddmm()
     cudaMemcpy(dB, hmatB, B_size * sizeof(cuDoubleComplex),
                             cudaMemcpyHostToDevice);
     CHECK_CUDA( cudaMemcpy(dC_offsets, coo_row_index,
-                            (C_rows + 1) * sizeof(int),
+                            rnnz * sizeof(int),
                             cudaMemcpyHostToDevice) )
     CHECK_CUDA( cudaMemcpy(dC_columns, coo_col_index, rnnz * sizeof(int),
                             cudaMemcpyHostToDevice) )
     CHECK_CUDA( cudaMemcpy(dC_values, coo_values, rnnz * sizeof(cuDoubleComplex),
                             cudaMemcpyHostToDevice) )
+    alphasparseXcoo2csr(dC_offsets, rnnz, C_rows, dCCsrRowPtr);
     //--------------------------------------------------------------------------
-    // CUSPARSE APIs
+
     alphasparseHandle_t     handle = NULL;
     alphasparseDnMatDescr_t matA, matB;
     alphasparseSpMatDescr_t matC;
@@ -197,7 +259,7 @@ alpha_sddmm()
                                         ALPHA_C_64F, ALPHASPARSE_ORDER_COL);
     // Create sparse matrix C in CSR format
     alphasparseCreateCsr(&matC, C_rows, C_cols, rnnz,
-                                        dC_offsets, dC_columns, dC_values,
+                                        dCCsrRowPtr, dC_columns, dC_values,
                                         ALPHA_SPARSE_INDEXTYPE_I32, ALPHA_SPARSE_INDEXTYPE_I32,
                                         ALPHA_SPARSE_INDEX_BASE_ZERO, ALPHA_C_64F);
     // allocate an external buffer if needed
@@ -208,7 +270,7 @@ alpha_sddmm()
                             &alpha, matA, matB, &beta, matC, ALPHA_C_64F,
                             ALPHASPARSE_SDDMM_ALG_DEFAULT, &bufferSize);
     CHECK_CUDA(cudaMalloc(&dBuffer, bufferSize));
-
+    cudaMemset(dBuffer, '\0', bufferSize);
     // execute preprocess (optional)
     alphasparseSDDMM_preprocess(handle,
                             transAT,
@@ -281,14 +343,17 @@ int main(int argc, const char *argv[]) {
     hmatB = (cuDoubleComplex*)alpha_malloc(B_size * sizeof(cuDoubleComplex));
     matC_ict = (cuDoubleComplex*)alpha_malloc(rnnz * sizeof(cuDoubleComplex));
     matC_cuda = (cuDoubleComplex*)alpha_malloc(rnnz * sizeof(cuDoubleComplex));
+    matC_cpu = (cuDoubleComplex*)alpha_malloc(rnnz * sizeof(cuDoubleComplex));
 
     alpha_fill_random(hmatA, 1, A_size);
     alpha_fill_random(hmatB, 1, B_size);
     memset(matC_ict, 0, rnnz * sizeof(cuDoubleComplex));
     memset(matC_cuda, 0, rnnz * sizeof(cuDoubleComplex));
+    memset(matC_cpu, 0, rnnz * sizeof(cuDoubleComplex));
 
     cuda_sddmm();
     alpha_sddmm();
+    cpu_sddmm();
     
     for (int i = 0; i < 20; i++) {
     std::cout << matC_cuda[i] << ", ";
@@ -297,7 +362,13 @@ int main(int argc, const char *argv[]) {
     for (int i = 0; i < 20; i++) {
         std::cout << matC_ict[i] << ", ";
     }
+    std::cout << std::endl;
+    for (int i = 0; i < 20; i++) {
+        std::cout << matC_cpu[i] << ", ";
+    }
     check((cuDoubleComplex*)matC_cuda, rnnz, (cuDoubleComplex*)matC_ict, rnnz);
+    check((cuDoubleComplex*)matC_cuda, rnnz, (cuDoubleComplex*)matC_cpu, rnnz);
+    check((cuDoubleComplex*)matC_ict, rnnz, (cuDoubleComplex*)matC_cpu, rnnz);
     
     return EXIT_SUCCESS;
 }

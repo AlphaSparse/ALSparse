@@ -1,4 +1,4 @@
-#include "alphasparse_spgemm_csr.h"
+#include "alphasparse_spgemm_csr_old.h"
 #include "alphasparse_spgemm_nnz_csr.h"
 #include "alphasparse_spgemm_copy_csr.h"
 #include "alphasparse_spgemm_speck_csr.h"
@@ -7,6 +7,7 @@
 #include "alphasparse_spgemm_opsp_csr.h"
 #include "alphasparse_spgemm_ns_csr.h"
 // #include "alphasparse_spgemm_ac_csr.h"
+// #include "alphasparse_spgemm_ia_csr.h"
 #include <iostream>
 
 static constexpr int spECK_STATIC_MEM_PER_BLOCK {49152};
@@ -17,20 +18,6 @@ static constexpr int spECK_STATIC_MEM_PER_BLOCK {49152};
 // - 166912 for Ampere professional devices (e.g. A100) (cc8.0)
 // static constexpr int spECK_DYNAMIC_MEM_PER_BLOCK{98304};//V100
 static constexpr int spECK_DYNAMIC_MEM_PER_BLOCK{166912};//A100
-
-size_t get_dataSize(alphasparseDataType D)
-{
-  switch (D)
-  {
-    case ALPHA_R_32F: return sizeof(float); 
-    case ALPHA_R_64F: return sizeof(double); 
-    case ALPHA_C_32F: return sizeof(float)*2; 
-    case ALPHA_C_64F: return sizeof(double)*2; 
-    case ALPHA_R_16F: return sizeof(float); 
-    case ALPHA_C_16F: return sizeof(double); 
-    default : return sizeof(double);
-  }
-}
 
 size_t get_dataSize(alphasparseDataType D)
 {
@@ -62,24 +49,24 @@ spgemm_template(alphasparseHandle_t handle,
     case ALPHA_SPARSE_FORMAT_CSR: {
       // spgemm_csr_fast<T, U>(handle, opA, opB, *((U*)alpha), matA, matB, *((U*)beta), matC, externalBuffer2);
       // spgemm_csr_amgx<T, U>(handle, opA, opB, *((U*)alpha), matA, matB, *((U*)beta), matC, externalBuffer2);
-      spgemm_csr_ns<T, U>(handle, opA, opB, *((U*)alpha), matA, matB, *((U*)beta), matC, externalBuffer2);
-      // T nnz;
-      // spgemm_nnz_csr<T>(handle,                       
-      //                 (T)matA->rows,
-      //                 (T)matB->cols,
-      //                 (T)matA->cols,
-      //                 (T)matA->nnz, 
-      //                 (T*)matA->row_data,
-      //                 (T*)matA->col_data,
-      //                 (T)matB->nnz,                     
-      //                 (T*)matB->row_data,
-      //                 (T*)matB->col_data,
-      //                 0,                        
-      //                 nullptr,
-      //                 nullptr,
-      //                 (T*)matC->row_data,
-      //                 &nnz,
-      //                 externalBuffer2);
+      // spgemm_csr_ns<T, U>(handle, opA, opB, *((U*)alpha), matA, matB, *((U*)beta), matC, externalBuffer2);
+      T nnz;
+      spgemm_nnz_csr<T>(handle,                       
+                      (T)matA->rows,
+                      (T)matB->cols,
+                      (T)matA->cols,
+                      (T)matA->nnz, 
+                      (T*)matA->row_data,
+                      (T*)matA->col_data,
+                      (T)matB->nnz,                     
+                      (T*)matB->row_data,
+                      (T*)matB->col_data,
+                      0,                        
+                      nullptr,
+                      nullptr,
+                      (T*)matC->row_data,
+                      &nnz,
+                      externalBuffer2);
       // // printf("nnzC %d \n",nnz);
 
       // if(matC->nnz != nnz)
@@ -89,32 +76,32 @@ spgemm_template(alphasparseHandle_t handle,
       //   cudaMalloc((void **)&matC->val_data, sizeof(U)*nnz);
       // }
 
-      // spgemm_csr<T,U>(handle,                       
-      //                 (T)matA->rows,
-      //                 (T)matB->cols,
-      //                 (T)matA->cols,
-      //                 *((U*)alpha),                      
-      //                 (T*)matA->row_data,
-      //                 (T*)matA->col_data,
-      //                 (U*)matA->val_data,
-      //                 (T)matA->nnz,                      
-      //                 (T*)matB->row_data,
-      //                 (T*)matB->col_data,
-      //                 (U*)matB->val_data,
-      //                 *((U*)beta),                        
-      //                 nullptr,
-      //                 nullptr,
-      //                 nullptr,
-      //                 (T*)matC->row_data,
-      //                 (T*)matC->col_data,
-      //                 (U*)matC->val_data,
-      //                 ALPHA_SPARSE_INDEX_BASE_ZERO,
-      //                 ALPHA_SPARSE_INDEX_BASE_ZERO,
-      //                 ALPHA_SPARSE_INDEX_BASE_ZERO,
-      //                 ALPHA_SPARSE_INDEX_BASE_ZERO,
-      //                 true,
-      //                 false,
-      //                 externalBuffer2);
+      spgemm_csr<T,U>(handle,                       
+                      (T)matA->rows,
+                      (T)matB->cols,
+                      (T)matA->cols,
+                      *((U*)alpha),                      
+                      (T*)matA->row_data,
+                      (T*)matA->col_data,
+                      (U*)matA->val_data,
+                      (T)matA->nnz,                      
+                      (T*)matB->row_data,
+                      (T*)matB->col_data,
+                      (U*)matB->val_data,
+                      *((U*)beta),                        
+                      nullptr,
+                      nullptr,
+                      nullptr,
+                      (T*)matC->row_data,
+                      (T*)matC->col_data,
+                      (U*)matC->val_data,
+                      ALPHA_SPARSE_INDEX_BASE_ZERO,
+                      ALPHA_SPARSE_INDEX_BASE_ZERO,
+                      ALPHA_SPARSE_INDEX_BASE_ZERO,
+                      ALPHA_SPARSE_INDEX_BASE_ZERO,
+                      true,
+                      false,
+                      externalBuffer2);
       // call_device_spgemm<T,U>(handle, 
       //                    opA,
       //                    opB,
@@ -154,6 +141,27 @@ spgemm_template(alphasparseHandle_t handle,
       //                     (int*)matC->row_data,
       //                     (int*)matC->col_data,                          
       //                     (int)matC->nnz);
+      return ALPHA_SPARSE_STATUS_SUCCESS;
+    }    
+  }
+  return ALPHA_SPARSE_STATUS_NOT_SUPPORTED;
+}
+
+template<typename T, typename U>
+alphasparseStatus_t
+spgemm_fast_template(alphasparseHandle_t handle,
+                alphasparseOperation_t opA,
+                alphasparseOperation_t opB,
+                const void* alpha,
+                alphasparseSpMatDescr_t matA,
+                alphasparseSpMatDescr_t matB,
+                const void* beta,
+                alphasparseSpMatDescr_t matC,
+                void * externalBuffer2)
+{
+  switch (matA->format) {
+    case ALPHA_SPARSE_FORMAT_CSR: {
+      spgemm_csr_fast<T, U>(handle, opA, opB, *((U*)alpha), matA, matB, *((U*)beta), matC, externalBuffer2);  
       return ALPHA_SPARSE_STATUS_SUCCESS;
     }    
   }
@@ -331,13 +339,14 @@ alphasparseSpGEMM_compute(alphasparseHandle_t handle,
   if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
       matA->data_type == ALPHA_R_64F && matC->data_type == ALPHA_R_64F) {
     // return spgemm_template<int32_t, double>(
-    return spgemm_opsp_template<uint32_t, double>(
+    return spgemm_fast_template<uint32_t, double>(  
+    // return spgemm_opsp_template<uint32_t, double>(
       // return spgemm_acsp_template<uint32_t, double>(
       handle, opA, opB, alpha, matA, matB, beta, matC, externalBuffer2);
   }
   // if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&
   //     matA->data_type == ALPHA_C_32F && matC->data_type == ALPHA_C_32F) {
-  //   return spgemm_template<int32_t, cuFloatComplex>(
+  //   return spgemm_opsp_template<uint32_t, cuFloatComplex>(
   //     handle, opA, opB, alpha, matA, matB, beta, matC, externalBuffer2);
   // }
   // if (matA->row_type == ALPHA_SPARSE_INDEXTYPE_I32 &&

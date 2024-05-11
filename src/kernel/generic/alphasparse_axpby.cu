@@ -10,6 +10,24 @@
 #include "alphasparse/types.h"
 #include "alphasparse/util/internal_check.h"
 
+template <typename T, typename U, typename V>
+__global__ static void
+mul_device(const T size,
+        const T nnz,
+      const V alpha,
+      const U *x_val,
+      const V beta,
+      const T *x_ind,
+      U *y)
+{
+    int tid    = threadIdx.x + blockIdx.x * blockDim.x;
+    int stride = gridDim.x * blockDim.x;
+
+    for (T i = tid; i < size; i += stride) {
+        y[i] = beta * y[i];
+    }
+}
+
 const int threadPerBlock = 256;
 
 template <typename T, typename U, typename V>
@@ -27,7 +45,9 @@ alphasparseStatus_t axpby_template(alphasparseHandle_t handle,
     U *y_val = (U *)y->values;
     const V alpha_val = *(V*)alpha;
     const V beta_val = *(V*)beta;
+    mul_device<<<dim3(blockPerGrid), dim3(threadPerBlock), 0, handle->stream>>>(size, nnz, alpha_val, x_val, beta_val, x_ind, y_val);
     axpby_device<<<dim3(blockPerGrid), dim3(threadPerBlock), 0, handle->stream>>>(size, nnz, alpha_val, x_val, beta_val, x_ind, y_val);
+   
     return ALPHA_SPARSE_STATUS_SUCCESS;
 }
 
@@ -143,9 +163,6 @@ axpby_device(const T size,
     int tid    = threadIdx.x + blockIdx.x * blockDim.x;
     int stride = gridDim.x * blockDim.x;
 
-    for (T i = tid; i < size; i += stride) {
-        y[i] = beta * y[i];
-    }
     for (T i = tid; i < nnz; i += stride) {
         y[x_ind[i]] = alpha * x_val[i] + y[x_ind[i]];
     }

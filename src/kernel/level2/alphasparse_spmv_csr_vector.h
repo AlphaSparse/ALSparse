@@ -133,10 +133,6 @@ __launch_bounds__(BLOCK_SIZE)
         if (lid == WF_SIZE - 1)
         {
             y[row] = y[row] * beta + sum * alpha;
-            // ALPHA_Number t1, t2;
-            // alpha_mul(t1, y[row], beta);
-            // alpha_mul(t2, sum, alpha);
-            // alpha_add(y[row], t1, t2);
         }
     }
 }

@@ -28,7 +28,7 @@ __global__ void __launch_bounds__(NUMERIC_PWARP_BLOCK_SIZE, 2) k_numeric_shared_
     int j, k;
     for(j = threadIdx.x; j < NUMERIC_PWARP_ROWS * tsize; j += blockDim.x){
         mono_shared_col[j] = -1;
-        mono_shared_val[j] = 0;
+        mono_shared_val[j] = DataType{};
     }
     if(threadIdx.x < NUMERIC_PWARP_ROWS){
         mono_shared_offset[threadIdx.x] = 0;
@@ -161,7 +161,7 @@ __global__ void __launch_bounds__(1024,2) k_numeric_shared_hash_tb_full_occu(
 
     for(j = threadIdx.x; j < tsize; j += blockDim.x){
         shared_col[j] = -1;
-        shared_val[j] = 0;
+        shared_val[j] = DataType{};
     }
     if(threadIdx.x == 0){
         shared_offset[0] = 0;
@@ -286,7 +286,7 @@ __global__ void __launch_bounds__(1024, 1) k_numeric_max_shared_hash_tb_half_occ
 
     for(j = threadIdx.x; j < tsize; j += blockDim.x){
         shared_col[j] = -1;
-        shared_val[j] = 0;
+        shared_val[j] = DataType{};
     }
     if(threadIdx.x == 0){
         shared_offset[0] = 0;
@@ -409,7 +409,7 @@ __global__ void __launch_bounds__(1024, 2) k_numeric_global_hash_tb_full_occu(
     int tsize = row_nnz * NUMERIC_SCALE_LARGE;
     for(j = threadIdx.x; j < tsize; j += blockDim.x){
         table_col[j] = -1;
-        table_val[j] = 0;
+        table_val[j] = DataType{};
     }
     if(threadIdx.x == 0){
         shared_offset[0] = 0;

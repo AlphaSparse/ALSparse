@@ -1,11 +1,3 @@
-
-#include "../test_common.h"
-
-/**
- * @brief ict mv csr test
- * @author HPCRC, ICT
- */
-
 #include <cuda_runtime_api.h>
 #include <cusparse.h>
 #include <stdio.h>
@@ -15,9 +7,9 @@
 #include <iostream>
 #include <vector>
 
-#include <alphasparse.h>
+#include "alphasparse.h"
 
-#include "alphasparse/util/auxiliary.h"
+#include "../test_common.h"
 
 const char *file;
 bool check_flag;
@@ -26,10 +18,10 @@ int iter;
 // sparse vector
 int nnz;
 int *alpha_x_idx;
-int *roc_x_idx;
-cuDoubleComplex *x_val, *cuda_y, *alpha_y;
-cuDoubleComplex alpha = make_cuDoubleComplex(2.,3.);
-cuDoubleComplex beta = make_cuDoubleComplex(4.,5.);
+int *cuda_x_idx;
+cuDoubleComplex *x_val, *cuda_y, *alpha_y, *cpu_y;
+cuDoubleComplex alpha = {2., 3.};
+cuDoubleComplex beta = {3., 4.};
 
 int idx_n = 1000;
 
@@ -53,7 +45,7 @@ int idx_n = 1000;
     }                                                                          \
 }
 
-static void roc_axpby() {
+static void cuda_axpby() {
     cudaDeviceProp devProp;
     int device_id = 0;
 
@@ -70,12 +62,12 @@ static void roc_axpby() {
     cudaMalloc((void **)&dx_val, sizeof(cuDoubleComplex) * idx_n);
     cudaMalloc((void **)&dy, sizeof(cuDoubleComplex) * idx_n * 20);
 
-    cudaMemcpy(dx_idx, roc_x_idx, sizeof(int) * idx_n,
+    cudaMemcpy(dx_idx, cuda_x_idx, sizeof(int) * idx_n,
             cudaMemcpyHostToDevice);
     cudaMemcpy(dx_val, x_val, sizeof(cuDoubleComplex) * idx_n, cudaMemcpyHostToDevice);
     cudaMemcpy(dy, cuda_y, sizeof(cuDoubleComplex) * idx_n * 20, cudaMemcpyHostToDevice);
 
-    // rocSPARSE handle
+    // cudaSPARSE handle
     cusparseHandle_t     handle = NULL;
     CHECK_CUSPARSE( cusparseCreate(&handle) )
 
@@ -89,9 +81,9 @@ static void roc_axpby() {
     cusparseCreateDnVec(&y, idx_n * 20, (void *)dy,
                                 CUDA_C_64F);
 
-    // Call rocsparse csrmv
+    // Call cudasparse csrmv
     roc_call_exit(cusparseAxpby(handle, (void *)&alpha, x, (void *)&beta, y),
-                "rocsparse_axpby");
+                "cudasparse_axpby");
 
     // Device synchronization
     cudaDeviceSynchronize();
@@ -105,9 +97,9 @@ static void roc_axpby() {
     cusparseDestroy(handle);
 }
 
-static void alpha_axpyi()
+static void alpha_axpby()
 {
-    // rocSPARSE handle
+    // cudaSPARSE handle
     alphasparseHandle_t handle;
     initHandle(&handle);
     alphasparseGetHandle(&handle);
@@ -138,7 +130,7 @@ static void alpha_axpyi()
     alphasparseDnVecDescr_t y{};
     alphasparseCreateDnVec(&y,idx_n * 20,(void *)dy,ALPHA_C_64F);
 
-    // Call rocsparse csrmv
+    // Call cudasparse csrmv
     alphasparseAxpby(handle, (void *)&alpha, x, (void *)&beta, y),
 
     // Device synchronization
@@ -153,6 +145,16 @@ static void alpha_axpyi()
     alphasparse_destory_handle(handle);
 }
 
+static void cpu_axpby()
+{
+    for (int i = 0; i < idx_n * 20; i ++) {
+        cpu_y[i] = cuCmul(beta, cpu_y[i]);
+    }
+    for (int i = 0; i < idx_n; i ++) {
+        cpu_y[alpha_x_idx[i]] = cuCadd(cuCmul(alpha, x_val[i]), cpu_y[alpha_x_idx[i]]);
+    }
+}
+
 int main(int argc, const char *argv[])
 {
     // args
@@ -161,48 +163,38 @@ int main(int argc, const char *argv[])
     check_flag = args_get_if_check(argc, argv);
     iter  = args_get_iter(argc, argv);
     idx_n  = args_get_nnz(argc, argv);
-
     alpha_x_idx =
         (int *)alpha_memalign(sizeof(int) * idx_n, DEFAULT_ALIGNMENT);
-    roc_x_idx = (int *)alpha_memalign(sizeof(int) * idx_n,
+    cuda_x_idx = (int *)alpha_memalign(sizeof(int) * idx_n,
                                                 DEFAULT_ALIGNMENT);
     x_val     = (cuDoubleComplex *)alpha_memalign(sizeof(cuDoubleComplex) * idx_n, DEFAULT_ALIGNMENT);
     alpha_y   = (cuDoubleComplex *)alpha_memalign(sizeof(cuDoubleComplex) * idx_n * 20, DEFAULT_ALIGNMENT);
     cuda_y     = (cuDoubleComplex *)alpha_memalign(sizeof(cuDoubleComplex) * idx_n * 20, DEFAULT_ALIGNMENT);
+    cpu_y     = (cuDoubleComplex *)alpha_memalign(sizeof(cuDoubleComplex) * idx_n * 20, DEFAULT_ALIGNMENT);
 
     alpha_fill_random(alpha_y, 1, idx_n * 20);
     alpha_fill_random(cuda_y, 1, idx_n * 20);
+    alpha_fill_random(cpu_y, 1, idx_n * 20);
     alpha_fill_random(x_val, 0, idx_n);
 
     for (int i = 0; i < idx_n; i++) {
         alpha_x_idx[i] = i * 20;
-        roc_x_idx[i]   = i * 20;
+        cuda_x_idx[i]   = i * 20;
     }
-    printf("\n====icty raw========\n");
-    for(int i=0;i<10;i++)
-        std::cout<<alpha_y[i]<<std::endl;
-    printf("\n====alpha_y raw end========\n");
-    for(int i=0;i<10;i++)
-        std::cout<<cuda_y[i]<<std::endl;
-    printf("\n====cuda_y raw========\n");
 
-    alpha_axpyi();
+    alpha_axpby();
 
     if (check_flag) {
-        roc_axpby();
-        printf("\n====icty raw========\n");
-        for(int i=0;i<10;i++)
-            std::cout<<alpha_y[i]<<std::endl;
-        printf("\n====alpha_y raw end========\n");
-        for(int i=0;i<10;i++)
-            std::cout<<cuda_y[i]<<std::endl;
-        printf("\n====cuda_y raw========\n");
+        cuda_axpby();
+        cpu_axpby();
         check(alpha_y, idx_n * 20, cuda_y, idx_n * 20);
+        check(cpu_y, idx_n * 20, cuda_y, idx_n * 20);
+        check(cpu_y, idx_n * 20, alpha_y, idx_n * 20);
     }
     printf("\n");
 
     alpha_free(x_val);
-    alpha_free(roc_x_idx);
+    alpha_free(cuda_x_idx);
     alpha_free(alpha_x_idx);
     return 0;
 }
