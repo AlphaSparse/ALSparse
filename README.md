@@ -1,18 +1,18 @@
-# ALSparse
+# AlphaSparse-Library
 
-ALSparse aims to build a common interface that provides Basic Linear Algebra Subroutines for sparse computation for diverse multi-core and many-core processors, and expects to be extended on distributed and heterogeneous platforms. Recently, ALSparse is created using the basic C/C++ programming language and can be deployed on both CPU (ARMv8-based and x86-based multi-core platforms) and DCU (HIP-based many-core platform).
+AlphaSparse-Library aims to build a common interface that provides Basic Linear Algebra Subroutines for sparse computation for diverse multi-core and many-core processors, and expects to be extended on distributed and heterogeneous platforms. Recently, AlphaSparse-Library is created using the basic C/C++ programming language and can be deployed on both CPU (ARMv8-based and x86-based multi-core platforms) and DCU (HIP-based many-core platform).
 
 It is primarily constrcuted with few dependencies on third-party library and very easy to use. Users can extend the library by adding customized BLAS kernels or sparse matrix storage formats. It's possible to extend more hardware platform as well.
 
 # Documentation
 
-The latest ALSparse documentation and API description can be found [here](https://alphasparse.github.io/AlphaSparse/build/html/index.html).
+The latest AlphaSparse-Library documentation and API description can be found [here](https://alphasparse.github.io/AlphaSparse/build/html/index.html).
 
 # Supported Backends
 
 ## CPU side
 
-ALSparse supports multiple CPU hardware platforms. Since it's written in C/C++, it can be used on nearly all kind of CPUs (The general kernels and relevant api comprise plain version). Apart from plain  kernels, high performance kernels targeting **hygon CPU** and **Kunpeng CPU** are provided as well. The fast kernels can be compiled either on x86_64 or arm based CPUs.
+AlphaSparse-Library supports multiple CPU hardware platforms. Since it's written in C/C++, it can be used on nearly all kind of CPUs (The general kernels and relevant api comprise plain version). Apart from plain  kernels, high performance kernels targeting **hygon CPU** and **Kunpeng CPU** are provided as well. The fast kernels can be compiled either on x86_64 or arm based CPUs.
 
 Up to now, the fast kernels are verified on:
 
@@ -21,7 +21,7 @@ Up to now, the fast kernels are verified on:
 
 ## GPU side
 
-ALSparse supports Deep Computing Unit platform (DCU, By Hygon) which is compatible with **HIP**. 
+AlphaSparse-Library supports Deep Computing Unit platform (DCU, By Hygon) which is compatible with **HIP**. 
 
 GPU kernels are supported on:
 
@@ -51,14 +51,14 @@ On DCU side, rocSparse can be used to perform the corretness check.
 
 ## Build
 
-You can build ALSparse using the following steps
+You can build AlphaSparse-Library using the following steps
 
 ```
-# Clone ALSparse using git
+# Clone AlphaSparse-Library using git
 git clone https://github.com/AlphaSparse.git
 
-# Go to ALSparse directory
-cd ALSparse
+# Go to AlphaSparse-Library directory
+cd AlphaSparse-Library
 
 # Build
 PLAIN_ON=1 HIP_ON=0 HYGON_ON=0 make -j
@@ -69,11 +69,11 @@ Set `HIP_ON=1` if you want to build the DCU kernels, set `ARM_ON=1`  for arm ker
 
 # Tests
 
-ALSparse provides some tests when the project is built. To run these tests, matrix has to be created or input an existing one with path.
+AlphaSparse-Library provides some tests when the project is built. To run these tests, matrix has to be created or input an existing one with path.
 
 ```
-# Go to ALSparse 
-cd ALSparse
+# Go to AlphaSparse-Library 
+cd AlphaSparse-Library
 
 # Create a directory for testing matrices
 mkdir Matrix
