@@ -565,7 +565,6 @@ int main(int argc, const char *argv[])
 
   cuda_mm();
   alpha_mm();
-  cpu_mm();
   std::cout << std::endl;
   for (int i = 0; i < 20; i++)
   {
