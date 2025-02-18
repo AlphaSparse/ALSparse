@@ -1,0 +1,1017 @@
+/*! \file */
+/* ************************************************************************
+* Copyright (C) 2021-2022 Advanced Micro Devices, Inc. All rights Reserved.
+*
+* Permission is hereby granted, free of charge, to any person obtaining a copy
+* of this software and associated documentation files (the "Software"), to deal
+* in the Software without restriction, including without limitation the rights
+* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+* copies of the Software, and to permit persons to whom the Software is
+* furnished to do so, subject to the following conditions:
+*
+* The above copyright notice and this permission notice shall be included in
+* all copies or substantial portions of the Software.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+* THE SOFTWARE.
+*
+* ************************************************************************ */
+
+#pragma once
+
+// Small sized problems
+
+// Cyclic reduction + parallel cyclic reduction algorithms based on paper
+// "Fast Tridiagonal Solvers on the GPU" by Yao Zhang, Jonathan Cohen, and John Owens
+//
+// Matrix has form:
+//
+// [ b0 c0 0  0  0  0  0  0 ]
+// [ a1 b1 c1 0  0  0  0  0 ]
+// [ 0  a2 b2 c2 0  0  0  0 ]
+// [ 0  0  a3 b3 c3 0  0  0 ]
+// [ 0  0  0  a4 b4 c4 0  0 ]
+// [ 0  0  0  0  a5 b5 c5 0 ]
+// [ 0  0  0  0  0  a6 b6 c6]
+// [ 0  0  0  0  0  0  a7 b7]
+
+// Cyclic reduction algorithm using shared memory
+template <unsigned int BLOCKSIZE, typename T>
+__launch_bounds__(BLOCKSIZE) static __global__
+void gtsv_nopivot_cr_pow2_shared_kernel(int m,
+                                        int n,
+                                        int ldb,
+                                        const T* __restrict__ dl,
+                                        const T* __restrict__ d,
+                                        const T* __restrict__ du,
+                                        T* __restrict__ B)
+{
+    int tid = threadIdx.x;
+
+    int iter   = static_cast<int>(log2((float)BLOCKSIZE));
+    int stride = 1;
+    int i      = BLOCKSIZE;
+
+    // Cyclic reduction shared memory
+    __shared__ T sa[2 * BLOCKSIZE];
+    __shared__ T sb[2 * BLOCKSIZE];
+    __shared__ T sc[2 * BLOCKSIZE];
+    __shared__ T srhs[2 * BLOCKSIZE];
+    __shared__ T sx[2 * BLOCKSIZE];
+
+    sa[tid]               = dl[tid];
+    sa[tid + BLOCKSIZE]   = dl[tid + BLOCKSIZE];
+    sb[tid]               = d[tid];
+    sb[tid + BLOCKSIZE]   = d[tid + BLOCKSIZE];
+    sc[tid]               = du[tid];
+    sc[tid + BLOCKSIZE]   = du[tid + BLOCKSIZE];
+    srhs[tid]             = B[tid + ldb * blockIdx.x];
+    srhs[tid + BLOCKSIZE] = B[tid + BLOCKSIZE + ldb * blockIdx.x];
+
+    __syncthreads();
+
+    // Forward reduction using cyclic reduction
+    for(int j = 0; j < iter; j++)
+    {
+        stride <<= 1; //stride *= 2;
+
+        if(tid < i)
+        {
+            int index = stride * tid + stride - 1;
+            int left  = index - (stride >> 1); //stride / 2;
+            int right = index + (stride >> 1); //stride / 2;
+
+            if(right >= 2 * BLOCKSIZE)
+            {
+                right = 2 * BLOCKSIZE - 1;
+            }
+
+            T k1 = sa[index] / sb[left];
+            T k2 = sc[index] / sb[right];
+
+            sb[index]   = sb[index] - sc[left] * k1 - sa[right] * k2;
+            srhs[index] = srhs[index] - srhs[left] * k1 - srhs[right] * k2;
+            sa[index]   = -sa[left] * k1;
+            sc[index]   = -sc[right] * k2;
+        }
+
+        i >>= 1; //i /= 2;
+
+        __syncthreads();
+    }
+
+    if(tid == 0)
+    {
+        // Solve 2x2 system
+        int i   = stride - 1;
+        int j   = 2 * stride - 1;
+        T             det = sb[j] * sb[i] - sc[i] * sa[j];
+        det               = make_value<T>(1.f) / det;
+
+        sx[i] = (sb[j] * srhs[i] - sc[i] * srhs[j]) * det;
+        sx[j] = (srhs[j] * sb[i] - srhs[i] * sa[j]) * det;
+    }
+
+    // Backward substitution using cyclic reduction
+    i = 2;
+    for(int j = 0; j < iter; j++)
+    {
+        __syncthreads();
+
+        if(tid < i)
+        {
+            int index = stride * tid + stride / 2 - 1;
+            int left  = index - (stride >> 1); //stride / 2;
+            int right = index + (stride >> 1); //stride / 2;
+
+            if(left < 0)
+            {
+                sx[index] = (srhs[index] - sc[index] * sx[right]) / sb[index];
+            }
+            else
+            {
+                sx[index]
+                    = (srhs[index] - sa[index] * sx[left] - sc[index] * sx[right]) / sb[index];
+            }
+        }
+
+        stride >>= 1; //stride /= 2;
+        i <<= 1; //i *= 2;
+    }
+
+    __syncthreads();
+
+    B[tid + ldb * blockIdx.x]             = sx[tid];
+    B[tid + BLOCKSIZE + ldb * blockIdx.x] = sx[tid + BLOCKSIZE];
+}
+
+// Parallel cyclic reduction algorithm using shared memory
+template <unsigned int BLOCKSIZE, typename T>
+__launch_bounds__(BLOCKSIZE) static __global__
+void gtsv_nopivot_pcr_pow2_shared_kernel(int m,
+                                         int n,
+                                         int ldb,
+                                         const T* __restrict__ dl,
+                                         const T* __restrict__ d,
+                                         const T* __restrict__ du,
+                                         T* __restrict__ B)
+{
+    int tid = threadIdx.x;
+
+    int iter   = static_cast<int>(log2((float)BLOCKSIZE / 2));
+    int stride = 1;
+
+    // Parallel cyclic reduction shared memory
+    __shared__ T sa[BLOCKSIZE + 1];
+    __shared__ T sb[BLOCKSIZE + 1];
+    __shared__ T sc[BLOCKSIZE + 1];
+    __shared__ T srhs[BLOCKSIZE + 1];
+    __shared__ T sx[BLOCKSIZE + 1];
+
+    // Fill parallel cyclic reduction shared memory
+    sa[tid]   = dl[tid];
+    sb[tid]   = d[tid];
+    sc[tid]   = du[tid];
+    srhs[tid] = B[tid + ldb * blockIdx.x];
+
+    __syncthreads();
+
+    for(int j = 0; j < iter; j++)
+    {
+        int right = tid + stride;
+        if(right >= BLOCKSIZE)
+            right = BLOCKSIZE - 1;
+
+        int left = tid - stride;
+        if(left < 0)
+            left = 0;
+
+        T k1 = sa[tid] / sb[left];
+        T k2 = sc[tid] / sb[right];
+
+        T tb   = sb[tid] - sc[left] * k1 - sa[right] * k2;
+        T trhs = srhs[tid] - srhs[left] * k1 - srhs[right] * k2;
+        T ta   = -sa[left] * k1;
+        T tc   = -sc[right] * k2;
+
+        __syncthreads();
+
+        sb[tid]   = tb;
+        srhs[tid] = trhs;
+        sa[tid]   = ta;
+        sc[tid]   = tc;
+
+        stride <<= 1; //stride *= 2;
+
+        __syncthreads();
+    }
+
+    if(tid < BLOCKSIZE / 2)
+    {
+        // Solve 2x2 systems
+        int i   = tid;
+        int j   = tid + stride;
+        T             det = sb[j] * sb[i] - sc[i] * sa[j];
+        det               = make_value<T>(1.f) / det;
+
+        sx[i] = (sb[j] * srhs[i] - sc[i] * srhs[j]) * det;
+        sx[j] = (srhs[j] * sb[i] - srhs[i] * sa[j]) * det;
+    }
+
+    __syncthreads();
+
+    B[tid + ldb * blockIdx.x] = sx[tid];
+}
+
+// Combined Parallel cyclic reduction and cyclic reduction algorithm using shared memory
+template <unsigned int BLOCKSIZE, unsigned int PCR_SIZE, typename T>
+__launch_bounds__(BLOCKSIZE) static __global__
+void gtsv_nopivot_crpcr_pow2_shared_kernel(int m,
+                                           int n,
+                                           int ldb,
+                                           const T* __restrict__ dl,
+                                           const T* __restrict__ d,
+                                           const T* __restrict__ du,
+                                           T* __restrict__ B)
+{
+    int tid = threadIdx.x;
+
+    int tot_iter = static_cast<int>(log2((float)BLOCKSIZE));
+    int pcr_iter = static_cast<int>(log2((float)PCR_SIZE / 2));
+    int cr_iter  = tot_iter - pcr_iter;
+    int stride   = 1;
+    int i        = BLOCKSIZE;
+
+    // Cyclic reduction shared memory
+    __shared__ T sa[2 * BLOCKSIZE];
+    __shared__ T sb[2 * BLOCKSIZE];
+    __shared__ T sc[2 * BLOCKSIZE];
+    __shared__ T srhs[2 * BLOCKSIZE];
+    __shared__ T sx[2 * BLOCKSIZE];
+
+    // Parallel cyclic reduction shared memory
+    __shared__ T spa[PCR_SIZE];
+    __shared__ T spb[PCR_SIZE];
+    __shared__ T spc[PCR_SIZE];
+    __shared__ T sprhs[PCR_SIZE];
+    __shared__ T spx[PCR_SIZE];
+
+    // Fill cyclic reduction shared memory
+    sa[tid]               = dl[tid];
+    sa[tid + BLOCKSIZE]   = dl[tid + BLOCKSIZE];
+    sb[tid]               = d[tid];
+    sb[tid + BLOCKSIZE]   = d[tid + BLOCKSIZE];
+    sc[tid]               = du[tid];
+    sc[tid + BLOCKSIZE]   = du[tid + BLOCKSIZE];
+    srhs[tid]             = B[tid + ldb * blockIdx.x];
+    srhs[tid + BLOCKSIZE] = B[tid + BLOCKSIZE + ldb * blockIdx.x];
+
+    __syncthreads();
+
+    // Forward reduction using cyclic reduction
+    for(int j = 0; j < cr_iter; j++)
+    {
+        stride <<= 1; //stride *= 2;
+
+        if(tid < i)
+        {
+            int index = stride * tid + stride - 1;
+            int left  = index - (stride >> 1); //stride / 2;
+            int right = index + (stride >> 1); //stride / 2;
+
+            if(right >= 2 * BLOCKSIZE)
+            {
+                right = 2 * BLOCKSIZE - 1;
+            }
+
+            T k1 = sa[index] / sb[left];
+            T k2 = sc[index] / sb[right];
+
+            sb[index]   = sb[index] - sc[left] * k1 - sa[right] * k2;
+            srhs[index] = srhs[index] - srhs[left] * k1 - srhs[right] * k2;
+            sa[index]   = -sa[left] * k1;
+            sc[index]   = -sc[right] * k2;
+        }
+
+        i >>= 1; //i /= 2;
+
+        __syncthreads();
+    }
+
+    // Parallel cyclic reduction
+    if(tid < PCR_SIZE)
+    {
+        spa[tid]   = sa[tid * stride + stride - 1];
+        spb[tid]   = sb[tid * stride + stride - 1];
+        spc[tid]   = sc[tid * stride + stride - 1];
+        sprhs[tid] = srhs[tid * stride + stride - 1];
+    }
+
+    __syncthreads();
+
+    int pcr_stride = 1;
+    for(int j = 0; j < pcr_iter; j++)
+    {
+        T ta;
+        T tb;
+        T tc;
+        T trhs;
+
+        if(tid < PCR_SIZE)
+        {
+            int right = tid + pcr_stride;
+            if(right >= PCR_SIZE)
+                right = PCR_SIZE - 1;
+
+            int left = tid - pcr_stride;
+            if(left < 0)
+                left = 0;
+
+            T k1 = spa[tid] / spb[left];
+            T k2 = spc[tid] / spb[right];
+
+            tb   = spb[tid] - spc[left] * k1 - spa[right] * k2;
+            trhs = sprhs[tid] - sprhs[left] * k1 - sprhs[right] * k2;
+            ta   = -spa[left] * k1;
+            tc   = -spc[right] * k2;
+        }
+
+        __syncthreads();
+
+        if(tid < PCR_SIZE)
+        {
+            spb[tid]   = tb;
+            sprhs[tid] = trhs;
+            spa[tid]   = ta;
+            spc[tid]   = tc;
+        }
+
+        pcr_stride <<= 1; //pcr_stride *= 2;
+
+        __syncthreads();
+    }
+
+    if(tid < pcr_stride) // same as PCR_SIZE / 2
+    {
+        // Solve 2x2 systems
+        int i   = tid;
+        int j   = tid + pcr_stride;
+        T             det = spb[j] * spb[i] - spc[i] * spa[j];
+        det               = make_value<T>(1.f) / det;
+
+        spx[i] = (spb[j] * sprhs[i] - spc[i] * sprhs[j]) * det;
+        spx[j] = (sprhs[j] * spb[i] - sprhs[i] * spa[j]) * det;
+    }
+
+    __syncthreads();
+
+    if(tid < PCR_SIZE)
+    {
+        sx[tid * stride + stride - 1] = spx[tid];
+    }
+
+    // Backward substitution using cyclic reduction
+    i = PCR_SIZE;
+    for(int j = 0; j < cr_iter; j++)
+    {
+        __syncthreads();
+
+        if(tid < i)
+        {
+            int index = stride * tid + stride / 2 - 1;
+            int left  = index - (stride >> 1); //stride / 2;
+            int right = index + (stride >> 1); //stride / 2;
+
+            if(left < 0)
+            {
+                sx[index] = (srhs[index] - sc[index] * sx[right]) / sb[index];
+            }
+            else
+            {
+                sx[index]
+                    = (srhs[index] - sa[index] * sx[left] - sc[index] * sx[right]) / sb[index];
+            }
+        }
+
+        (stride >>= 1); //stride /= 2;
+        i <<= 1; //i *= 2;
+    }
+
+    __syncthreads();
+
+    B[tid + ldb * blockIdx.x]             = sx[tid];
+    B[tid + BLOCKSIZE + ldb * blockIdx.x] = sx[tid + BLOCKSIZE];
+}
+
+// Parallel cyclic reduction algorithm
+template <unsigned int BLOCKSIZE, typename T>
+__launch_bounds__(BLOCKSIZE) static __global__
+void gtsv_nopivot_pcr_shared_kernel(int m,
+                                    int n,
+                                    int ldb,
+                                    const T* __restrict__ dl,
+                                    const T* __restrict__ d,
+                                    const T* __restrict__ du,
+                                    T* __restrict__ B)
+{
+    int tid = threadIdx.x;
+
+    int iter   = static_cast<int>(log2((float)BLOCKSIZE / 2));
+    int stride = 1;
+
+    // Parallel cyclic reduction shared memory
+    __shared__ T sa[BLOCKSIZE];
+    __shared__ T sb[BLOCKSIZE];
+    __shared__ T sc[BLOCKSIZE];
+    __shared__ T srhs[BLOCKSIZE];
+    __shared__ T sx[BLOCKSIZE];
+
+    // Fill parallel cyclic reduction shared memory
+    sa[tid]   = (tid < m) ? dl[tid] : T{};
+    sb[tid]   = (tid < m) ? d[tid] : T{};
+    sc[tid]   = (tid < m) ? du[tid] : T{};
+    srhs[tid] = (tid < m) ? B[tid + ldb * blockIdx.x] : T{};
+
+    __syncthreads();
+
+    for(int j = 0; j < iter; j++)
+    {
+        int right = tid + stride;
+        if(right >= m)
+            right = m - 1;
+
+        int left = tid - stride;
+        if(left < 0)
+            left = 0;
+
+        T k1 = sa[tid] / sb[left];
+        T k2 = sc[tid] / sb[right];
+
+        T tb   = sb[tid] - sc[left] * k1 - sa[right] * k2;
+        T trhs = srhs[tid] - srhs[left] * k1 - srhs[right] * k2;
+        T ta   = -sa[left] * k1;
+        T tc   = -sc[right] * k2;
+
+        __syncthreads();
+
+        sb[tid]   = tb;
+        srhs[tid] = trhs;
+        sa[tid]   = ta;
+        sc[tid]   = tc;
+
+        stride <<= 1; //stride *= 2;
+
+        __syncthreads();
+    }
+
+    if(tid < BLOCKSIZE / 2)
+    {
+        int i = tid;
+        int j = tid + stride;
+
+        if(j < m)
+        {
+            // Solve 2x2 systems
+            T det = sb[j] * sb[i] - sc[i] * sa[j];
+            det   = make_value<T>(1.f) / det;
+
+            sx[i] = (sb[j] * srhs[i] - sc[i] * srhs[j]) * det;
+            sx[j] = (srhs[j] * sb[i] - srhs[i] * sa[j]) * det;
+        }
+        else
+        {
+            // Solve 1x1 systems
+            sx[i] = srhs[i] / sb[i];
+        }
+    }
+
+    __syncthreads();
+
+    if(tid < m)
+    {
+        B[tid + ldb * blockIdx.x] = sx[tid];
+    }
+}
+
+// Medium sized problems
+
+// Parallel cyclic reduction algorithm using global memory for partitioning large matrices into
+// multiple small ones that can be solved in parallel in stage 2
+template <unsigned int BLOCKSIZE, typename T>
+__launch_bounds__(BLOCKSIZE) static __global__
+void gtsv_nopivot_pcr_pow2_stage1_n_kernel(int stride,
+                                           int m,
+                                           int n,
+                                           int ldb,
+                                           const T* __restrict__ a0,
+                                           const T* __restrict__ b0,
+                                           const T* __restrict__ c0,
+                                           const T* __restrict__ rhs0,
+                                           T* __restrict__ a1,
+                                           T* __restrict__ b1,
+                                           T* __restrict__ c1,
+                                           T* __restrict__ rhs1)
+{
+    int tid = threadIdx.x;
+    int gid = tid + BLOCKSIZE * blockIdx.x;
+
+    const T* rhs0_col = rhs0 + ldb * blockIdx.y;
+    T*       rhs1_col = rhs1 + m * blockIdx.y;
+
+    int right = gid + stride;
+    if(right >= m)
+        right = m - 1;
+
+    int left = gid - stride;
+    if(left < 0)
+        left = 0;
+
+    T k1 = a0[gid] / b0[left];
+    T k2 = c0[gid] / b0[right];
+    T k3 = -a0[left];
+    T k4 = -c0[right];
+
+    b1[gid] = b0[gid] - c0[left] * k1 - a0[right] * k2;
+    a1[gid] = k3 * k1;
+    c1[gid] = k4 * k2;
+
+    k3            = rhs0_col[right];
+    k4            = rhs0_col[left];
+    rhs1_col[gid] = rhs0_col[gid] - k4 * k1 - k3 * k2;
+}
+
+template <unsigned int BLOCKSIZE, typename T>
+__launch_bounds__(BLOCKSIZE) static __global__
+void gtsv_nopivot_pcr_stage1_n_kernel(int stride,
+                                      int m,
+                                      int n,
+                                      int ldb,
+                                      const T* __restrict__ a0,
+                                      const T* __restrict__ b0,
+                                      const T* __restrict__ c0,
+                                      const T* __restrict__ rhs0,
+                                      T* __restrict__ a1,
+                                      T* __restrict__ b1,
+                                      T* __restrict__ c1,
+                                      T* __restrict__ rhs1)
+{
+    int tid = threadIdx.x;
+    int gid = tid + BLOCKSIZE * blockIdx.x;
+
+    if(gid >= m)
+    {
+        return;
+    }
+
+    int right = gid + stride;
+    if(right >= m)
+        right = m - 1;
+
+    int left = gid - stride;
+    if(left < 0)
+        left = 0;
+
+    T k1 = a0[gid] / b0[left];
+    T k2 = c0[gid] / b0[right];
+    T k3 = -a0[left];
+    T k4 = -c0[right];
+
+    b1[gid] = b0[gid] - c0[left] * k1 - a0[right] * k2;
+    a1[gid] = k3 * k1;
+    c1[gid] = k4 * k2;
+
+    const T* rhs0_col = rhs0 + ldb * blockIdx.y;
+    T*       rhs1_col = rhs1 + m * blockIdx.y;
+
+    k3            = rhs0_col[right];
+    k4            = rhs0_col[left];
+    rhs1_col[gid] = rhs0_col[gid] - k4 * k1 - k3 * k2;
+}
+
+// Cyclic reduction algorithm using shared memory to solve multiple small matrices produced from
+// stage 1 above in parallel
+template <unsigned int BLOCKSIZE, typename T>
+__launch_bounds__(BLOCKSIZE) static __global__
+void gtsv_nopivot_cr_pow2_stage2_kernel(int m,
+                                        int n,
+                                        int ldb,
+                                        const T* __restrict__ a,
+                                        const T* __restrict__ b,
+                                        const T* __restrict__ c,
+                                        const T* __restrict__ rhs,
+                                        T* __restrict__ B)
+{
+    int tid = threadIdx.x;
+
+    int iter   = static_cast<int>(log2((float)BLOCKSIZE));
+    int stride = 1;
+    int i      = BLOCKSIZE;
+
+    // Cyclic reduction shared memory
+    __shared__ T sa[2 * BLOCKSIZE];
+    __shared__ T sb[2 * BLOCKSIZE];
+    __shared__ T sc[2 * BLOCKSIZE];
+    __shared__ T srhs[2 * BLOCKSIZE];
+    __shared__ T sx[2 * BLOCKSIZE];
+
+    sa[tid]   = a[gridDim.x * tid + blockIdx.x];
+    sb[tid]   = b[gridDim.x * tid + blockIdx.x];
+    sc[tid]   = c[gridDim.x * tid + blockIdx.x];
+    srhs[tid] = rhs[gridDim.x * tid + blockIdx.x + m * blockIdx.y];
+    sx[tid]   = T{};
+
+    sa[tid + BLOCKSIZE] = a[gridDim.x * (tid + BLOCKSIZE) + blockIdx.x];
+    sb[tid + BLOCKSIZE] = b[gridDim.x * (tid + BLOCKSIZE) + blockIdx.x];
+    sc[tid + BLOCKSIZE] = c[gridDim.x * (tid + BLOCKSIZE) + blockIdx.x];
+    srhs[tid + BLOCKSIZE]
+        = rhs[gridDim.x * (tid + BLOCKSIZE) + blockIdx.x + m * blockIdx.y];
+    sx[tid + BLOCKSIZE] = T{};
+
+    __syncthreads();
+
+    // Forward reduction using cyclic reduction
+    for(int j = 0; j < iter; j++)
+    {
+        stride <<= 1; //stride *= 2;
+
+        if(tid < i)
+        {
+            int index = stride * tid + stride - 1;
+            int left  = index - (stride >> 1); //stride / 2;
+            int right = index + (stride >> 1); //stride / 2;
+
+            if(right >= 2 * BLOCKSIZE)
+            {
+                right = 2 * BLOCKSIZE - 1;
+            }
+
+            T k1 = sa[index] / sb[left];
+            T k2 = sc[index] / sb[right];
+
+            sb[index]   = sb[index] - sc[left] * k1 - sa[right] * k2;
+            srhs[index] = srhs[index] - srhs[left] * k1 - srhs[right] * k2;
+            sa[index]   = -sa[left] * k1;
+            sc[index]   = -sc[right] * k2;
+        }
+
+        i >>= 1; //i /= 2;
+
+        __syncthreads();
+    }
+
+    if(tid == 0)
+    {
+        // Solve 2x2 system
+        int i   = stride - 1;
+        int j   = 2 * stride - 1;
+        T             det = sb[j] * sb[i] - sc[i] * sa[j];
+        det               = make_value<T>(1.f) / det;
+
+        sx[i] = (sb[j] * srhs[i] - sc[i] * srhs[j]) * det;
+        sx[j] = (srhs[j] * sb[i] - srhs[i] * sa[j]) * det;
+    }
+
+    // Backward substitution using cyclic reduction
+    i = 2;
+    for(int j = 0; j < iter; j++)
+    {
+        __syncthreads();
+
+        if(tid < i)
+        {
+            int index = stride * tid + stride / 2 - 1;
+            int left  = index - (stride >> 1); //stride / 2;
+            int right = index + (stride >> 1); //stride / 2;
+
+            if(left < 0)
+            {
+                sx[index] = (srhs[index] - sc[index] * sx[right]) / sb[index];
+            }
+            else
+            {
+                sx[index]
+                    = (srhs[index] - sa[index] * sx[left] - sc[index] * sx[right]) / sb[index];
+            }
+        }
+
+        (stride >>= 1); //stride /= 2;
+        i <<= 1; //i *= 2;
+    }
+
+    __syncthreads();
+
+    B[gridDim.x * tid + blockIdx.x + ldb * blockIdx.y]               = sx[tid];
+    B[gridDim.x * (tid + BLOCKSIZE) + blockIdx.x + ldb * blockIdx.y] = sx[tid + BLOCKSIZE];
+}
+
+// Parallel cyclic reduction algorithm using shared memory to solve multiple small matrices produced from
+// stage 1 above in parallel
+template <unsigned int BLOCKSIZE, typename T>
+__launch_bounds__(BLOCKSIZE) static __global__
+void gtsv_nopivot_pcr_stage2_kernel(int m,
+                                    int n,
+                                    int ldb,
+                                    const T* __restrict__ a,
+                                    const T* __restrict__ b,
+                                    const T* __restrict__ c,
+                                    const T* __restrict__ rhs,
+                                    T* __restrict__ B)
+{
+    int tid = threadIdx.x;
+    int gid = gridDim.x * tid + blockIdx.x;
+
+    int iter   = static_cast<int>(log2((float)BLOCKSIZE / 2));
+    int stride = 1;
+
+    // Parallel cyclic reduction shared memory
+    __shared__ T sa[BLOCKSIZE];
+    __shared__ T sb[BLOCKSIZE];
+    __shared__ T sc[BLOCKSIZE];
+    __shared__ T srhs[BLOCKSIZE];
+    __shared__ T sx[BLOCKSIZE];
+
+    // Fill parallel cyclic reduction shared memory
+    sa[tid]   = (gid < m) ? a[gid] : a[m - gridDim.x + blockIdx.x];
+    sb[tid]   = (gid < m) ? b[gid] : b[m - gridDim.x + blockIdx.x];
+    sc[tid]   = (gid < m) ? c[gid] : c[m - gridDim.x + blockIdx.x];
+    srhs[tid] = (gid < m) ? rhs[gid + m * blockIdx.y]
+                          : rhs[m - gridDim.x + blockIdx.x + m * blockIdx.y];
+
+    __syncthreads();
+
+    for(int j = 0; j < iter; j++)
+    {
+        int right = tid + stride;
+        if(right >= BLOCKSIZE)
+            right = BLOCKSIZE - 1;
+        ;
+
+        int left = tid - stride;
+        if(left < 0)
+            left = 0;
+
+        T k1 = sa[tid] / sb[left];
+        T k2 = sc[tid] / sb[right];
+
+        T tb   = sb[tid] - sc[left] * k1 - sa[right] * k2;
+        T trhs = srhs[tid] - srhs[left] * k1 - srhs[right] * k2;
+        T ta   = -sa[left] * k1;
+        T tc   = -sc[right] * k2;
+
+        __syncthreads();
+
+        sb[tid]   = tb;
+        srhs[tid] = trhs;
+        sa[tid]   = ta;
+        sc[tid]   = tc;
+
+        stride <<= 1; //stride *= 2;
+
+        __syncthreads();
+    }
+
+    if(tid < BLOCKSIZE / 2)
+    {
+        int i = tid;
+        int j = tid + stride;
+
+        if(j < BLOCKSIZE)
+        {
+            // Solve 2x2 systems
+            T det = sb[j] * sb[i] - sc[i] * sa[j];
+            det   = make_value<T>(1.f) / det;
+
+            sx[i] = (sb[j] * srhs[i] - sc[i] * srhs[j]) * det;
+            sx[j] = (srhs[j] * sb[i] - srhs[i] * sa[j]) * det;
+        }
+        else
+        {
+            // Solve 1x1 systems
+            sx[i] = srhs[i] / sb[i];
+        }
+    }
+
+    __syncthreads();
+
+    if(gid < m)
+    {
+        B[gid + ldb * blockIdx.y] = sx[tid];
+    }
+}
+
+// Large size problems
+
+// Parallel cyclic reduction algorithm using global memory for partitioning large matrices into
+// multiple small ones that can be solved in parallel in stage 2
+template <unsigned int BLOCKSIZE, typename T>
+__launch_bounds__(BLOCKSIZE) static __global__
+void gtsv_nopivot_pcr_pow2_stage1_kernel(int stride,
+                                         int m,
+                                         int n,
+                                         int ldb,
+                                         const T* __restrict__ a0,
+                                         const T* __restrict__ b0,
+                                         const T* __restrict__ c0,
+                                         const T* __restrict__ rhs0,
+                                         T* __restrict__ a1,
+                                         T* __restrict__ b1,
+                                         T* __restrict__ c1,
+                                         T* __restrict__ rhs1)
+{
+    int gid = threadIdx.x + BLOCKSIZE * blockIdx.x;
+
+    int right = gid + stride;
+    if(right >= m)
+        right = m - 1;
+
+    int left = gid - stride;
+    if(left < 0)
+        left = 0;
+
+    T k1 = a0[gid] / b0[left];
+    T k2 = c0[gid] / b0[right];
+    T k3 = -a0[left];
+    T k4 = -c0[right];
+
+    b1[gid] = b0[gid] - c0[left] * k1 - a0[right] * k2;
+    a1[gid] = k3 * k1;
+    c1[gid] = k4 * k2;
+
+    for(int i = 0; i < n; i++)
+    {
+        const T* rhs0_col = rhs0 + ldb * i;
+        T*       rhs1_col = rhs1 + m * i;
+
+        k3            = rhs0_col[right];
+        k4            = rhs0_col[left];
+        rhs1_col[gid] = rhs0_col[gid] - k4 * k1 - k3 * k2;
+    }
+}
+
+// Parallel cyclic reduction algorithm using global memory for partitioning large matrices into
+// multiple small ones that can be solved in parallel in stage 2
+template <unsigned int BLOCKSIZE, typename T>
+__launch_bounds__(BLOCKSIZE) static __global__
+void gtsv_nopivot_pcr_stage1_kernel(int stride,
+                                    int m,
+                                    int n,
+                                    int ldb,
+                                    const T* __restrict__ a0,
+                                    const T* __restrict__ b0,
+                                    const T* __restrict__ c0,
+                                    const T* __restrict__ rhs0,
+                                    T* __restrict__ a1,
+                                    T* __restrict__ b1,
+                                    T* __restrict__ c1,
+                                    T* __restrict__ rhs1)
+{
+    int tid = threadIdx.x;
+    int gid = tid + BLOCKSIZE * blockIdx.x;
+
+    if(gid >= m)
+    {
+        return;
+    }
+
+    int right = gid + stride;
+    if(right >= m)
+        right = m - 1;
+
+    int left = gid - stride;
+    if(left < 0)
+        left = 0;
+
+    T k1 = a0[gid] / b0[left];
+    T k2 = c0[gid] / b0[right];
+    T k3 = -a0[left];
+    T k4 = -c0[right];
+
+    b1[gid] = b0[gid] - c0[left] * k1 - a0[right] * k2;
+    a1[gid] = k3 * k1;
+    c1[gid] = k4 * k2;
+
+    for(int i = 0; i < n; i++)
+    {
+        const T* rhs0_col = rhs0 + ldb * i;
+        T*       rhs1_col = rhs1 + m * i;
+
+        k3            = rhs0_col[right];
+        k4            = rhs0_col[left];
+        rhs1_col[gid] = rhs0_col[gid] - k4 * k1 - k3 * k2;
+    }
+}
+
+// See Nikolai Sakharnykh. Efficient tridiagonal solvers for adi methods and fluid simulation.
+// In NVIDIA GPU Technology Conference 2010, September 2010.
+template <unsigned int BLOCKSIZE, unsigned int SYSTEM_SIZE, typename T>
+__launch_bounds__(BLOCKSIZE) static __global__
+void gtsv_nopivot_thomas_pow2_stage2_kernel(int stride,
+                                            int m,
+                                            int n,
+                                            int ldb,
+                                            const T* __restrict__ a0,
+                                            const T* __restrict__ b0,
+                                            const T* __restrict__ c0,
+                                            const T* __restrict__ rhs0,
+                                            T* __restrict__ a1,
+                                            T* __restrict__ b1,
+                                            T* __restrict__ c1,
+                                            T* __restrict__ rhs1,
+                                            T* __restrict__ B)
+{
+    int gid = threadIdx.x + BLOCKSIZE * blockIdx.x;
+
+    if(gid >= stride)
+    {
+        return;
+    }
+
+    // Forward elimination
+    c1[gid]                       = c0[gid] / b0[gid];
+    rhs1[gid + m * blockIdx.y] = rhs0[gid + m * blockIdx.y] / b0[gid];
+
+    for(int i = 1; i < SYSTEM_SIZE; i++)
+    {
+        int index = stride * i + gid;
+        int minus = stride * (i - 1) + gid;
+
+        T k = make_value<T>(1.f) / (b0[index] - c1[minus] * a0[index]);
+
+        c1[index] = c0[index] * k;
+        rhs1[index + m * blockIdx.y]
+            = (rhs0[index + m * blockIdx.y] - rhs1[minus + m * blockIdx.y] * a0[index]) * k;
+    }
+
+    // backward substitution
+    B[stride * (SYSTEM_SIZE - 1) + gid + ldb * blockIdx.y]
+        = rhs1[stride * (SYSTEM_SIZE - 1) + gid + m * blockIdx.y];
+
+    for(int i = SYSTEM_SIZE - 2; i >= 0; i--)
+    {
+        int index = stride * i + gid;
+        int plus  = stride * (i + 1) + gid;
+
+        B[index + ldb * blockIdx.y]
+            = rhs1[index + m * blockIdx.y] - c1[index] * B[plus + ldb * blockIdx.y];
+    }
+}
+
+template <unsigned int BLOCKSIZE, typename T>
+__launch_bounds__(BLOCKSIZE) static __global__
+void gtsv_nopivot_thomas_stage2_kernel(int stride,
+                                       int m,
+                                       int n,
+                                       int ldb,
+                                       const T* __restrict__ a0,
+                                       const T* __restrict__ b0,
+                                       const T* __restrict__ c0,
+                                       const T* __restrict__ rhs0,
+                                       T* __restrict__ a1,
+                                       T* __restrict__ b1,
+                                       T* __restrict__ c1,
+                                       T* __restrict__ rhs1,
+                                       T* __restrict__ B)
+{
+    int gid = threadIdx.x + BLOCKSIZE * blockIdx.x;
+
+    if(gid >= stride)
+    {
+        return;
+    }
+
+    int system_size = (m - gid - 1) / stride + 1;
+
+    // Forward elimination
+    c1[gid]                       = c0[gid] / b0[gid];
+    rhs1[gid + m * blockIdx.y] = rhs0[gid + m * blockIdx.y] / b0[gid];
+
+    for(int i = 1; i < system_size; i++)
+    {
+        int index = stride * i + gid;
+        int minus = stride * (i - 1) + gid;
+
+        T k = make_value<T>(1.f) / (b0[index] - c1[minus] * a0[index]);
+
+        c1[index] = c0[index] * k;
+        rhs1[index + m * blockIdx.y]
+            = (rhs0[index + m * blockIdx.y] - rhs1[minus + m * blockIdx.y] * a0[index]) * k;
+    }
+
+    // backward substitution
+    B[stride * (system_size - 1) + gid + ldb * blockIdx.y]
+        = rhs1[stride * (system_size - 1) + gid + m * blockIdx.y];
+
+    for(int i = system_size - 2; i >= 0; i--)
+    {
+        int index = stride * i + gid;
+        int plus  = stride * (i + 1) + gid;
+
+        B[index + ldb * blockIdx.y]
+            = rhs1[index + m * blockIdx.y] - c1[index] * B[plus + ldb * blockIdx.y];
+    }
+}

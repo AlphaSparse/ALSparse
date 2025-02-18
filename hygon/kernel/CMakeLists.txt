@@ -1,0 +1,34 @@
+set(alphasparse_source
+  kernel/level1/alphasparse_axpy.cpp
+  kernel/level1/alphasparse_dotci_sub.cpp
+  kernel/level1/alphasparse_doti.cpp
+  kernel/level1/alphasparse_dotui_sub.cpp
+  kernel/level1/alphasparse_gthr.cpp
+  kernel/level1/alphasparse_gthrz.cpp
+  kernel/level1/alphasparse_rot.cpp
+  kernel/level1/alphasparse_sctr.cpp
+  kernel/level2/alphasparse_mv.cpp
+  kernel/level2/alphasparse_trsv.cpp
+  kernel/level3/alphasparse_mm.cpp
+  kernel/level3/alphasparse_spmm.cpp
+  kernel/level3/alphasparse_spmmd.cpp
+  kernel/level3/alphasparse_trsm.cpp
+  kernel/level3/alphasparse_add.cpp
+  kernel/level3/alphasparse_set_value.cpp
+  PARENT_SCOPE
+)
+
+set(ASM_SOURCES
+    kernel/level2/mv/gemv/csrmv/gemv_csr_serial_fma_c8_u2.S
+    kernel/level2/mv/gemv/csrmv/gemv_csr_serial_fma_c16_u1.S
+    kernel/level2/mv/gemv/csrmv/gemv_csr_serial_fma_fp32_u8_ext.S
+    kernel/level2/mv/gemv/csrmv/gemv_csr_serial_fma_fp64_u4.S
+    kernel/level2/mv/gemv/csrmv/gemv_sload_shuffle_hadd_reduce_128.S
+    kernel/level2/mv/gemv/csrmv/gemv_sload_shuffle_shuffle_reduce_128.S
+    kernel/level2/mv/gemv/csrmv/gemv_sload_unroll4_128.S
+    kernel/level2/mv/gemv/csrmv/gemv_vgather_hadd_reduce_128.S
+    kernel/level2/mv/gemv/csrmv/gemv_vgather_shuffle_reduce_128.S
+    kernel/level2/mv/gemv/ellmv/ellsgemv_fma128.S
+    kernel/level2/mv/gemv/bsrmv/gebsrsgemv_4x1_fma128.S
+    PARENT_SCOPE
+)

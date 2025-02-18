@@ -1,0 +1,600 @@
+#pragma once
+
+// level 1
+
+#define axpy axpy_d_
+#define gthr gthr_d_
+#define gthrz gthrz_d_
+#define rot rot_d_
+#define sctr sctr_d_
+#define doti doti_d_
+
+// coo
+#define update_values_coo update_values_d_coo
+#define set_value_coo set_value_d_coo
+
+#define add_coo add_d_coo
+#define add_coo_trans add_d_coo_trans
+
+#define gemv_coo gemv_d_coo
+#define gemv_coo_trans gemv_d_coo_trans
+#define symv_coo_n_lo symv_d_coo_n_lo
+#define symv_coo_u_lo symv_d_coo_u_lo
+#define symv_coo_n_hi symv_d_coo_n_hi
+#define symv_coo_u_hi symv_d_coo_u_hi
+#define trmv_coo_n_lo trmv_d_coo_n_lo
+#define trmv_coo_u_lo trmv_d_coo_u_lo
+#define trmv_coo_n_hi trmv_d_coo_n_hi
+#define trmv_coo_u_hi trmv_d_coo_u_hi
+#define trmv_coo_n_lo_trans trmv_d_coo_n_lo_trans
+#define trmv_coo_u_lo_trans trmv_d_coo_u_lo_trans
+#define trmv_coo_n_hi_trans trmv_d_coo_n_hi_trans
+#define trmv_coo_u_hi_trans trmv_d_coo_u_hi_trans
+#define diagmv_coo_n diagmv_d_coo_n
+#define diagmv_coo_u diagmv_d_coo_u
+
+#define gemm_coo_row gemm_d_coo_row
+#define gemm_coo_col gemm_d_coo_col
+#define gemm_coo_row_trans gemm_d_coo_row_trans
+#define gemm_coo_col_trans gemm_d_coo_col_trans
+#define symm_coo_n_lo_row symm_d_coo_n_lo_row
+#define symm_coo_u_lo_row symm_d_coo_u_lo_row
+#define symm_coo_n_hi_row symm_d_coo_n_hi_row
+#define symm_coo_u_hi_row symm_d_coo_u_hi_row
+#define symm_coo_n_lo_col symm_d_coo_n_lo_col
+#define symm_coo_u_lo_col symm_d_coo_u_lo_col
+#define symm_coo_n_hi_col symm_d_coo_n_hi_col
+#define symm_coo_u_hi_col symm_d_coo_u_hi_col
+#define trmm_coo_n_lo_row trmm_d_coo_n_lo_row
+#define trmm_coo_u_lo_row trmm_d_coo_u_lo_row
+#define trmm_coo_n_hi_row trmm_d_coo_n_hi_row
+#define trmm_coo_u_hi_row trmm_d_coo_u_hi_row
+#define trmm_coo_n_lo_col trmm_d_coo_n_lo_col
+#define trmm_coo_u_lo_col trmm_d_coo_u_lo_col
+#define trmm_coo_n_hi_col trmm_d_coo_n_hi_col
+#define trmm_coo_u_hi_col trmm_d_coo_u_hi_col
+#define trmm_coo_n_lo_row_trans trmm_d_coo_n_lo_row_trans
+#define trmm_coo_u_lo_row_trans trmm_d_coo_u_lo_row_trans
+#define trmm_coo_n_hi_row_trans trmm_d_coo_n_hi_row_trans
+#define trmm_coo_u_hi_row_trans trmm_d_coo_u_hi_row_trans
+#define trmm_coo_n_lo_col_trans trmm_d_coo_n_lo_col_trans
+#define trmm_coo_u_lo_col_trans trmm_d_coo_u_lo_col_trans
+#define trmm_coo_n_hi_col_trans trmm_d_coo_n_hi_col_trans
+#define trmm_coo_u_hi_col_trans trmm_d_coo_u_hi_col_trans
+#define diagmm_coo_n_row diagmm_d_coo_n_row
+#define diagmm_coo_u_row diagmm_d_coo_u_row
+#define diagmm_coo_n_col diagmm_d_coo_n_col
+#define diagmm_coo_u_col diagmm_d_coo_u_col
+
+#define spmmd_coo_row spmmd_d_coo_row
+#define spmmd_coo_col spmmd_d_coo_col
+#define spmmd_coo_row_trans spmmd_d_coo_row_trans
+#define spmmd_coo_col_trans spmmd_d_coo_col_trans
+
+#define spmm_coo spmm_d_coo
+#define spmm_coo_trans spmm_d_coo_trans
+
+#define trsv_coo_n_lo trsv_d_coo_n_lo
+#define trsv_coo_u_lo trsv_d_coo_u_lo
+#define trsv_coo_n_hi trsv_d_coo_n_hi
+#define trsv_coo_u_hi trsv_d_coo_u_hi
+#define trsv_coo_n_lo_trans trsv_d_coo_n_lo_trans
+#define trsv_coo_u_lo_trans trsv_d_coo_u_lo_trans
+#define trsv_coo_n_hi_trans trsv_d_coo_n_hi_trans
+#define trsv_coo_u_hi_trans trsv_d_coo_u_hi_trans
+#define diagsv_coo_n diagsv_d_coo_n
+#define diagsv_coo_u diagsv_d_coo_u
+
+#define trsm_coo_n_lo_row trsm_d_coo_n_lo_row
+#define trsm_coo_u_lo_row trsm_d_coo_u_lo_row
+#define trsm_coo_n_hi_row trsm_d_coo_n_hi_row
+#define trsm_coo_u_hi_row trsm_d_coo_u_hi_row
+#define trsm_coo_n_lo_col trsm_d_coo_n_lo_col
+#define trsm_coo_u_lo_col trsm_d_coo_u_lo_col
+#define trsm_coo_n_hi_col trsm_d_coo_n_hi_col
+#define trsm_coo_u_hi_col trsm_d_coo_u_hi_col
+#define trsm_coo_n_lo_row_trans trsm_d_coo_n_lo_row_trans
+#define trsm_coo_u_lo_row_trans trsm_d_coo_u_lo_row_trans
+#define trsm_coo_n_hi_row_trans trsm_d_coo_n_hi_row_trans
+#define trsm_coo_u_hi_row_trans trsm_d_coo_u_hi_row_trans
+#define trsm_coo_n_lo_col_trans trsm_d_coo_n_lo_col_trans
+#define trsm_coo_u_lo_col_trans trsm_d_coo_u_lo_col_trans
+#define trsm_coo_n_hi_col_trans trsm_d_coo_n_hi_col_trans
+#define trsm_coo_u_hi_col_trans trsm_d_coo_u_hi_col_trans
+#define diagsm_coo_n_row diagsm_d_coo_n_row
+#define diagsm_coo_u_row diagsm_d_coo_u_row
+#define diagsm_coo_n_col diagsm_d_coo_n_col
+#define diagsm_coo_u_col diagsm_d_coo_u_col
+
+
+// csr
+#define update_values_csr update_values_d_csr
+#define set_value_csr set_value_d_csr
+
+#define add_csr add_d_csr
+#define add_csr_trans add_d_csr_trans
+
+#define gemv_csr gemv_d_csr
+#define gemv_csr_trans gemv_d_csr_trans
+#define symv_csr_n_lo symv_d_csr_n_lo
+#define symv_csr_u_lo symv_d_csr_u_lo
+#define symv_csr_n_hi symv_d_csr_n_hi
+#define symv_csr_u_hi symv_d_csr_u_hi
+#define trmv_csr_n_lo trmv_d_csr_n_lo
+#define trmv_csr_u_lo trmv_d_csr_u_lo
+#define trmv_csr_n_hi trmv_d_csr_n_hi
+#define trmv_csr_u_hi trmv_d_csr_u_hi
+#define trmv_csr_n_lo_trans trmv_d_csr_n_lo_trans
+#define trmv_csr_u_lo_trans trmv_d_csr_u_lo_trans
+#define trmv_csr_n_hi_trans trmv_d_csr_n_hi_trans
+#define trmv_csr_u_hi_trans trmv_d_csr_u_hi_trans
+#define diagmv_csr_n diagmv_d_csr_n
+#define diagmv_csr_u diagmv_d_csr_u
+
+#define gemm_csr_row gemm_d_csr_row
+#define gemm_csr_col gemm_d_csr_col
+#define gemm_csr_row_trans gemm_d_csr_row_trans
+#define gemm_csr_col_trans gemm_d_csr_col_trans
+#define symm_csr_n_lo_row symm_d_csr_n_lo_row
+#define symm_csr_u_lo_row symm_d_csr_u_lo_row
+#define symm_csr_n_hi_row symm_d_csr_n_hi_row
+#define symm_csr_u_hi_row symm_d_csr_u_hi_row
+#define symm_csr_n_lo_col symm_d_csr_n_lo_col
+#define symm_csr_u_lo_col symm_d_csr_u_lo_col
+#define symm_csr_n_hi_col symm_d_csr_n_hi_col
+#define symm_csr_u_hi_col symm_d_csr_u_hi_col
+#define trmm_csr_n_lo_row trmm_d_csr_n_lo_row
+#define trmm_csr_u_lo_row trmm_d_csr_u_lo_row
+#define trmm_csr_n_hi_row trmm_d_csr_n_hi_row
+#define trmm_csr_u_hi_row trmm_d_csr_u_hi_row
+#define trmm_csr_n_lo_col trmm_d_csr_n_lo_col
+#define trmm_csr_u_lo_col trmm_d_csr_u_lo_col
+#define trmm_csr_n_hi_col trmm_d_csr_n_hi_col
+#define trmm_csr_u_hi_col trmm_d_csr_u_hi_col
+#define trmm_csr_n_lo_row_trans trmm_d_csr_n_lo_row_trans
+#define trmm_csr_u_lo_row_trans trmm_d_csr_u_lo_row_trans
+#define trmm_csr_n_hi_row_trans trmm_d_csr_n_hi_row_trans
+#define trmm_csr_u_hi_row_trans trmm_d_csr_u_hi_row_trans
+#define trmm_csr_n_lo_col_trans trmm_d_csr_n_lo_col_trans
+#define trmm_csr_u_lo_col_trans trmm_d_csr_u_lo_col_trans
+#define trmm_csr_n_hi_col_trans trmm_d_csr_n_hi_col_trans
+#define trmm_csr_u_hi_col_trans trmm_d_csr_u_hi_col_trans
+#define diagmm_csr_n_row diagmm_d_csr_n_row
+#define diagmm_csr_u_row diagmm_d_csr_u_row
+#define diagmm_csr_n_col diagmm_d_csr_n_col
+#define diagmm_csr_u_col diagmm_d_csr_u_col
+
+#define spmmd_csr_row spmmd_d_csr_row
+#define spmmd_csr_col spmmd_d_csr_col
+#define spmmd_csr_row_trans spmmd_d_csr_row_trans
+#define spmmd_csr_col_trans spmmd_d_csr_col_trans
+
+#define spmm_csr spmm_d_csr
+#define spmm_csr_trans spmm_d_csr_trans
+#define trsv_csr_n_lo trsv_d_csr_n_lo
+#define trsv_csr_u_lo trsv_d_csr_u_lo
+#define trsv_csr_n_hi trsv_d_csr_n_hi
+#define trsv_csr_u_hi trsv_d_csr_u_hi
+#define trsv_csr_n_lo_trans trsv_d_csr_n_lo_trans
+#define trsv_csr_u_lo_trans trsv_d_csr_u_lo_trans
+#define trsv_csr_n_hi_trans trsv_d_csr_n_hi_trans
+#define trsv_csr_u_hi_trans trsv_d_csr_u_hi_trans
+#define diagsv_csr_n diagsv_d_csr_n
+#define diagsv_csr_u diagsv_d_csr_u
+
+#define trsm_csr_n_lo_row trsm_d_csr_n_lo_row
+#define trsm_csr_u_lo_row trsm_d_csr_u_lo_row
+#define trsm_csr_n_hi_row trsm_d_csr_n_hi_row
+#define trsm_csr_u_hi_row trsm_d_csr_u_hi_row
+#define trsm_csr_n_lo_col trsm_d_csr_n_lo_col
+#define trsm_csr_u_lo_col trsm_d_csr_u_lo_col
+#define trsm_csr_n_hi_col trsm_d_csr_n_hi_col
+#define trsm_csr_u_hi_col trsm_d_csr_u_hi_col
+#define trsm_csr_n_lo_row_trans trsm_d_csr_n_lo_row_trans
+#define trsm_csr_u_lo_row_trans trsm_d_csr_u_lo_row_trans
+#define trsm_csr_n_hi_row_trans trsm_d_csr_n_hi_row_trans
+#define trsm_csr_u_hi_row_trans trsm_d_csr_u_hi_row_trans
+#define trsm_csr_n_lo_col_trans trsm_d_csr_n_lo_col_trans
+#define trsm_csr_u_lo_col_trans trsm_d_csr_u_lo_col_trans
+#define trsm_csr_n_hi_col_trans trsm_d_csr_n_hi_col_trans
+#define trsm_csr_u_hi_col_trans trsm_d_csr_u_hi_col_trans
+#define diagsm_csr_n_row diagsm_d_csr_n_row
+#define diagsm_csr_u_row diagsm_d_csr_u_row
+#define diagsm_csr_n_col diagsm_d_csr_n_col
+#define diagsm_csr_u_col diagsm_d_csr_u_col
+
+
+// csc
+#define update_values_csc update_values_d_csc
+#define set_value_csc set_value_d_csc
+
+#define add_csc add_d_csc
+#define add_csc_trans add_d_csc_trans
+
+#define gemv_csc gemv_d_csc
+#define gemv_csc_trans gemv_d_csc_trans
+#define symv_csc_n_lo symv_d_csc_n_lo
+#define symv_csc_u_lo symv_d_csc_u_lo
+#define symv_csc_n_hi symv_d_csc_n_hi
+#define symv_csc_u_hi symv_d_csc_u_hi
+#define trmv_csc_n_lo trmv_d_csc_n_lo
+#define trmv_csc_u_lo trmv_d_csc_u_lo
+#define trmv_csc_n_hi trmv_d_csc_n_hi
+#define trmv_csc_u_hi trmv_d_csc_u_hi
+#define trmv_csc_n_lo_trans trmv_d_csc_n_lo_trans
+#define trmv_csc_u_lo_trans trmv_d_csc_u_lo_trans
+#define trmv_csc_n_hi_trans trmv_d_csc_n_hi_trans
+#define trmv_csc_u_hi_trans trmv_d_csc_u_hi_trans
+#define diagmv_csc_n diagmv_d_csc_n
+#define diagmv_csc_u diagmv_d_csc_u
+
+#define gemm_csc_row gemm_d_csc_row
+#define gemm_csc_col gemm_d_csc_col
+#define gemm_csc_row_trans gemm_d_csc_row_trans
+#define gemm_csc_col_trans gemm_d_csc_col_trans
+#define symm_csc_n_lo_row symm_d_csc_n_lo_row
+#define symm_csc_u_lo_row symm_d_csc_u_lo_row
+#define symm_csc_n_hi_row symm_d_csc_n_hi_row
+#define symm_csc_u_hi_row symm_d_csc_u_hi_row
+#define symm_csc_n_lo_col symm_d_csc_n_lo_col
+#define symm_csc_u_lo_col symm_d_csc_u_lo_col
+#define symm_csc_n_hi_col symm_d_csc_n_hi_col
+#define symm_csc_u_hi_col symm_d_csc_u_hi_col
+#define trmm_csc_n_lo_row trmm_d_csc_n_lo_row
+#define trmm_csc_u_lo_row trmm_d_csc_u_lo_row
+#define trmm_csc_n_hi_row trmm_d_csc_n_hi_row
+#define trmm_csc_u_hi_row trmm_d_csc_u_hi_row
+#define trmm_csc_n_lo_col trmm_d_csc_n_lo_col
+#define trmm_csc_u_lo_col trmm_d_csc_u_lo_col
+#define trmm_csc_n_hi_col trmm_d_csc_n_hi_col
+#define trmm_csc_u_hi_col trmm_d_csc_u_hi_col
+#define trmm_csc_n_lo_row_trans trmm_d_csc_n_lo_row_trans
+#define trmm_csc_u_lo_row_trans trmm_d_csc_u_lo_row_trans
+#define trmm_csc_n_hi_row_trans trmm_d_csc_n_hi_row_trans
+#define trmm_csc_u_hi_row_trans trmm_d_csc_u_hi_row_trans
+#define trmm_csc_n_lo_col_trans trmm_d_csc_n_lo_col_trans
+#define trmm_csc_u_lo_col_trans trmm_d_csc_u_lo_col_trans
+#define trmm_csc_n_hi_col_trans trmm_d_csc_n_hi_col_trans
+#define trmm_csc_u_hi_col_trans trmm_d_csc_u_hi_col_trans
+#define diagmm_csc_n_row diagmm_d_csc_n_row
+#define diagmm_csc_u_row diagmm_d_csc_u_row
+#define diagmm_csc_n_col diagmm_d_csc_n_col
+#define diagmm_csc_u_col diagmm_d_csc_u_col
+
+#define spmmd_csc_row spmmd_d_csc_row
+#define spmmd_csc_col spmmd_d_csc_col
+#define spmmd_csc_row_trans spmmd_d_csc_row_trans
+#define spmmd_csc_col_trans spmmd_d_csc_col_trans
+
+#define spmm_csc spmm_d_csc
+#define spmm_csc_trans spmm_d_csc_trans
+
+#define trsv_csc_n_lo trsv_d_csc_n_lo
+#define trsv_csc_u_lo trsv_d_csc_u_lo
+#define trsv_csc_n_hi trsv_d_csc_n_hi
+#define trsv_csc_u_hi trsv_d_csc_u_hi
+#define trsv_csc_n_lo_trans trsv_d_csc_n_lo_trans
+#define trsv_csc_u_lo_trans trsv_d_csc_u_lo_trans
+#define trsv_csc_n_hi_trans trsv_d_csc_n_hi_trans
+#define trsv_csc_u_hi_trans trsv_d_csc_u_hi_trans
+#define diagsv_csc_n diagsv_d_csc_n
+#define diagsv_csc_u diagsv_d_csc_u
+
+#define trsm_csc_n_lo_row trsm_d_csc_n_lo_row
+#define trsm_csc_u_lo_row trsm_d_csc_u_lo_row
+#define trsm_csc_n_hi_row trsm_d_csc_n_hi_row
+#define trsm_csc_u_hi_row trsm_d_csc_u_hi_row
+#define trsm_csc_n_lo_col trsm_d_csc_n_lo_col
+#define trsm_csc_u_lo_col trsm_d_csc_u_lo_col
+#define trsm_csc_n_hi_col trsm_d_csc_n_hi_col
+#define trsm_csc_u_hi_col trsm_d_csc_u_hi_col
+#define trsm_csc_n_lo_row_trans trsm_d_csc_n_lo_row_trans
+#define trsm_csc_u_lo_row_trans trsm_d_csc_u_lo_row_trans
+#define trsm_csc_n_hi_row_trans trsm_d_csc_n_hi_row_trans
+#define trsm_csc_u_hi_row_trans trsm_d_csc_u_hi_row_trans
+#define trsm_csc_n_lo_col_trans trsm_d_csc_n_lo_col_trans
+#define trsm_csc_u_lo_col_trans trsm_d_csc_u_lo_col_trans
+#define trsm_csc_n_hi_col_trans trsm_d_csc_n_hi_col_trans
+#define trsm_csc_u_hi_col_trans trsm_d_csc_u_hi_col_trans
+#define diagsm_csc_n_row diagsm_d_csc_n_row
+#define diagsm_csc_u_row diagsm_d_csc_u_row
+#define diagsm_csc_n_col diagsm_d_csc_n_col
+#define diagsm_csc_u_col diagsm_d_csc_u_col
+
+
+// bsr
+#define update_values_bsr update_values_d_bsr
+#define set_value_bsr set_value_d_bsr
+
+#define add_bsr add_d_bsr
+#define add_bsr_trans add_d_bsr_trans
+
+#define gemv_bsr gemv_d_bsr
+#define gemv_bsr_trans gemv_d_bsr_trans
+#define symv_bsr_n_lo symv_d_bsr_n_lo
+#define symv_bsr_u_lo symv_d_bsr_u_lo
+#define symv_bsr_n_hi symv_d_bsr_n_hi
+#define symv_bsr_u_hi symv_d_bsr_u_hi
+#define trmv_bsr_n_lo trmv_d_bsr_n_lo
+#define trmv_bsr_u_lo trmv_d_bsr_u_lo
+#define trmv_bsr_n_hi trmv_d_bsr_n_hi
+#define trmv_bsr_u_hi trmv_d_bsr_u_hi
+#define trmv_bsr_n_lo_trans trmv_d_bsr_n_lo_trans
+#define trmv_bsr_u_lo_trans trmv_d_bsr_u_lo_trans
+#define trmv_bsr_n_hi_trans trmv_d_bsr_n_hi_trans
+#define trmv_bsr_u_hi_trans trmv_d_bsr_u_hi_trans
+#define diagmv_bsr_n diagmv_d_bsr_n
+#define diagmv_bsr_u diagmv_d_bsr_u
+
+#define gemm_bsr_row gemm_d_bsr_row
+#define gemm_bsr_col gemm_d_bsr_col
+#define gemm_bsr_row_trans gemm_d_bsr_row_trans
+#define gemm_bsr_col_trans gemm_d_bsr_col_trans
+#define symm_bsr_n_lo_row symm_d_bsr_n_lo_row
+#define symm_bsr_u_lo_row symm_d_bsr_u_lo_row
+#define symm_bsr_n_hi_row symm_d_bsr_n_hi_row
+#define symm_bsr_u_hi_row symm_d_bsr_u_hi_row
+#define symm_bsr_n_lo_col symm_d_bsr_n_lo_col
+#define symm_bsr_u_lo_col symm_d_bsr_u_lo_col
+#define symm_bsr_n_hi_col symm_d_bsr_n_hi_col
+#define symm_bsr_u_hi_col symm_d_bsr_u_hi_col
+#define trmm_bsr_n_lo_row trmm_d_bsr_n_lo_row
+#define trmm_bsr_u_lo_row trmm_d_bsr_u_lo_row
+#define trmm_bsr_n_hi_row trmm_d_bsr_n_hi_row
+#define trmm_bsr_u_hi_row trmm_d_bsr_u_hi_row
+#define trmm_bsr_n_lo_col trmm_d_bsr_n_lo_col
+#define trmm_bsr_u_lo_col trmm_d_bsr_u_lo_col
+#define trmm_bsr_n_hi_col trmm_d_bsr_n_hi_col
+#define trmm_bsr_u_hi_col trmm_d_bsr_u_hi_col
+#define trmm_bsr_n_lo_row_trans trmm_d_bsr_n_lo_row_trans
+#define trmm_bsr_u_lo_row_trans trmm_d_bsr_u_lo_row_trans
+#define trmm_bsr_n_hi_row_trans trmm_d_bsr_n_hi_row_trans
+#define trmm_bsr_u_hi_row_trans trmm_d_bsr_u_hi_row_trans
+#define trmm_bsr_n_lo_col_trans trmm_d_bsr_n_lo_col_trans
+#define trmm_bsr_u_lo_col_trans trmm_d_bsr_u_lo_col_trans
+#define trmm_bsr_n_hi_col_trans trmm_d_bsr_n_hi_col_trans
+#define trmm_bsr_u_hi_col_trans trmm_d_bsr_u_hi_col_trans
+#define diagmm_bsr_n_row diagmm_d_bsr_n_row
+#define diagmm_bsr_u_row diagmm_d_bsr_u_row
+#define diagmm_bsr_n_col diagmm_d_bsr_n_col
+#define diagmm_bsr_u_col diagmm_d_bsr_u_col
+
+#define spmmd_bsr_row spmmd_d_bsr_row
+#define spmmd_bsr_col spmmd_d_bsr_col
+#define spmmd_bsr_row_trans spmmd_d_bsr_row_trans
+#define spmmd_bsr_col_trans spmmd_d_bsr_col_trans
+
+#define spmm_bsr spmm_d_bsr
+#define spmm_bsr_trans spmm_d_bsr_trans
+
+#define trsv_bsr_n_lo trsv_d_bsr_n_lo
+#define trsv_bsr_u_lo trsv_d_bsr_u_lo
+#define trsv_bsr_n_hi trsv_d_bsr_n_hi
+#define trsv_bsr_u_hi trsv_d_bsr_u_hi
+#define trsv_bsr_n_lo_trans trsv_d_bsr_n_lo_trans
+#define trsv_bsr_u_lo_trans trsv_d_bsr_u_lo_trans
+#define trsv_bsr_n_hi_trans trsv_d_bsr_n_hi_trans
+#define trsv_bsr_u_hi_trans trsv_d_bsr_u_hi_trans
+#define diagsv_bsr_n diagsv_d_bsr_n
+#define diagsv_bsr_u diagsv_d_bsr_u
+
+#define trsm_bsr_n_lo_row trsm_d_bsr_n_lo_row
+#define trsm_bsr_u_lo_row trsm_d_bsr_u_lo_row
+#define trsm_bsr_n_hi_row trsm_d_bsr_n_hi_row
+#define trsm_bsr_u_hi_row trsm_d_bsr_u_hi_row
+#define trsm_bsr_n_lo_col trsm_d_bsr_n_lo_col
+#define trsm_bsr_u_lo_col trsm_d_bsr_u_lo_col
+#define trsm_bsr_n_hi_col trsm_d_bsr_n_hi_col
+#define trsm_bsr_u_hi_col trsm_d_bsr_u_hi_col
+#define trsm_bsr_n_lo_row_trans trsm_d_bsr_n_lo_row_trans
+#define trsm_bsr_u_lo_row_trans trsm_d_bsr_u_lo_row_trans
+#define trsm_bsr_n_hi_row_trans trsm_d_bsr_n_hi_row_trans
+#define trsm_bsr_u_hi_row_trans trsm_d_bsr_u_hi_row_trans
+#define trsm_bsr_n_lo_col_trans trsm_d_bsr_n_lo_col_trans
+#define trsm_bsr_u_lo_col_trans trsm_d_bsr_u_lo_col_trans
+#define trsm_bsr_n_hi_col_trans trsm_d_bsr_n_hi_col_trans
+#define trsm_bsr_u_hi_col_trans trsm_d_bsr_u_hi_col_trans
+#define diagsm_bsr_n_row diagsm_d_bsr_n_row
+#define diagsm_bsr_u_row diagsm_d_bsr_u_row
+#define diagsm_bsr_n_col diagsm_d_bsr_n_col
+#define diagsm_bsr_u_col diagsm_d_bsr_u_col
+
+// sky
+#define update_values_sky update_values_d_sky
+#define set_value_sky set_value_d_sky
+
+#define add_sky add_d_sky
+#define add_sky_trans add_d_sky_trans
+
+#define gemv_sky gemv_d_sky
+#define gemv_sky_trans gemv_d_sky_trans
+#define symv_sky_n_lo symv_d_sky_n_lo
+#define symv_sky_u_lo symv_d_sky_u_lo
+#define symv_sky_n_hi symv_d_sky_n_hi
+#define symv_sky_u_hi symv_d_sky_u_hi
+#define trmv_sky_n_lo trmv_d_sky_n_lo
+#define trmv_sky_u_lo trmv_d_sky_u_lo
+#define trmv_sky_n_hi trmv_d_sky_n_hi
+#define trmv_sky_u_hi trmv_d_sky_u_hi
+#define trmv_sky_n_lo_trans trmv_d_sky_n_lo_trans
+#define trmv_sky_u_lo_trans trmv_d_sky_u_lo_trans
+#define trmv_sky_n_hi_trans trmv_d_sky_n_hi_trans
+#define trmv_sky_u_hi_trans trmv_d_sky_u_hi_trans
+#define diagmv_sky_n diagmv_d_sky_n
+#define diagmv_sky_u diagmv_d_sky_u
+
+#define gemm_sky_row gemm_d_sky_row
+#define gemm_sky_col gemm_d_sky_col
+#define gemm_sky_row_trans gemm_d_sky_row_trans
+#define gemm_sky_col_trans gemm_d_sky_col_trans
+#define symm_sky_n_lo_row symm_d_sky_n_lo_row
+#define symm_sky_u_lo_row symm_d_sky_u_lo_row
+#define symm_sky_n_hi_row symm_d_sky_n_hi_row
+#define symm_sky_u_hi_row symm_d_sky_u_hi_row
+#define symm_sky_n_lo_col symm_d_sky_n_lo_col
+#define symm_sky_u_lo_col symm_d_sky_u_lo_col
+#define symm_sky_n_hi_col symm_d_sky_n_hi_col
+#define symm_sky_u_hi_col symm_d_sky_u_hi_col
+#define trmm_sky_n_lo_row trmm_d_sky_n_lo_row
+#define trmm_sky_u_lo_row trmm_d_sky_u_lo_row
+#define trmm_sky_n_hi_row trmm_d_sky_n_hi_row
+#define trmm_sky_u_hi_row trmm_d_sky_u_hi_row
+#define trmm_sky_n_lo_col trmm_d_sky_n_lo_col
+#define trmm_sky_u_lo_col trmm_d_sky_u_lo_col
+#define trmm_sky_n_hi_col trmm_d_sky_n_hi_col
+#define trmm_sky_u_hi_col trmm_d_sky_u_hi_col
+#define trmm_sky_n_lo_row_trans trmm_d_sky_n_lo_row_trans
+#define trmm_sky_u_lo_row_trans trmm_d_sky_u_lo_row_trans
+#define trmm_sky_n_hi_row_trans trmm_d_sky_n_hi_row_trans
+#define trmm_sky_u_hi_row_trans trmm_d_sky_u_hi_row_trans
+#define trmm_sky_n_lo_col_trans trmm_d_sky_n_lo_col_trans
+#define trmm_sky_u_lo_col_trans trmm_d_sky_u_lo_col_trans
+#define trmm_sky_n_hi_col_trans trmm_d_sky_n_hi_col_trans
+#define trmm_sky_u_hi_col_trans trmm_d_sky_u_hi_col_trans
+#define diagmm_sky_n_row diagmm_d_sky_n_row
+#define diagmm_sky_u_row diagmm_d_sky_u_row
+#define diagmm_sky_n_col diagmm_d_sky_n_col
+#define diagmm_sky_u_col diagmm_d_sky_u_col
+
+#define spmmd_sky_row spmmd_d_sky_row
+#define spmmd_sky_col spmmd_d_sky_col
+#define spmmd_sky_row_trans spmmd_d_sky_row_trans
+#define spmmd_sky_col_trans spmmd_d_sky_col_trans
+
+#define spmm_sky spmm_d_sky
+#define spmm_sky_trans spmm_d_sky_trans
+
+#define trsv_sky_n_lo trsv_d_sky_n_lo
+#define trsv_sky_u_lo trsv_d_sky_u_lo
+#define trsv_sky_n_hi trsv_d_sky_n_hi
+#define trsv_sky_u_hi trsv_d_sky_u_hi
+#define trsv_sky_n_lo_trans trsv_d_sky_n_lo_trans
+#define trsv_sky_u_lo_trans trsv_d_sky_u_lo_trans
+#define trsv_sky_n_hi_trans trsv_d_sky_n_hi_trans
+#define trsv_sky_u_hi_trans trsv_d_sky_u_hi_trans
+#define diagsv_sky_n diagsv_d_sky_n
+#define diagsv_sky_u diagsv_d_sky_u
+
+#define trsm_sky_n_lo_row trsm_d_sky_n_lo_row
+#define trsm_sky_u_lo_row trsm_d_sky_u_lo_row
+#define trsm_sky_n_hi_row trsm_d_sky_n_hi_row
+#define trsm_sky_u_hi_row trsm_d_sky_u_hi_row
+#define trsm_sky_n_lo_col trsm_d_sky_n_lo_col
+#define trsm_sky_u_lo_col trsm_d_sky_u_lo_col
+#define trsm_sky_n_hi_col trsm_d_sky_n_hi_col
+#define trsm_sky_u_hi_col trsm_d_sky_u_hi_col
+#define trsm_sky_n_lo_row_trans trsm_d_sky_n_lo_row_trans
+#define trsm_sky_u_lo_row_trans trsm_d_sky_u_lo_row_trans
+#define trsm_sky_n_hi_row_trans trsm_d_sky_n_hi_row_trans
+#define trsm_sky_u_hi_row_trans trsm_d_sky_u_hi_row_trans
+#define trsm_sky_n_lo_col_trans trsm_d_sky_n_lo_col_trans
+#define trsm_sky_u_lo_col_trans trsm_d_sky_u_lo_col_trans
+#define trsm_sky_n_hi_col_trans trsm_d_sky_n_hi_col_trans
+#define trsm_sky_u_hi_col_trans trsm_d_sky_u_hi_col_trans
+#define diagsm_sky_n_row diagsm_d_sky_n_row
+#define diagsm_sky_u_row diagsm_d_sky_u_row
+#define diagsm_sky_n_col diagsm_d_sky_n_col
+#define diagsm_sky_u_col diagsm_d_sky_u_col
+
+// dia
+#define set_value_dia set_value_d_dia
+#define update_values_dia update_values_d_dia
+
+#define add_dia add_d_dia
+#define add_dia_trans add_d_dia_trans
+
+#define gemv_dia gemv_d_dia
+#define gemv_dia_trans gemv_d_dia_trans
+#define symv_dia_n_lo symv_d_dia_n_lo
+#define symv_dia_u_lo symv_d_dia_u_lo
+#define symv_dia_n_hi symv_d_dia_n_hi
+#define symv_dia_u_hi symv_d_dia_u_hi
+#define trmv_dia_n_lo trmv_d_dia_n_lo
+#define trmv_dia_u_lo trmv_d_dia_u_lo
+#define trmv_dia_n_hi trmv_d_dia_n_hi
+#define trmv_dia_u_hi trmv_d_dia_u_hi
+#define trmv_dia_n_lo_trans trmv_d_dia_n_lo_trans
+#define trmv_dia_u_lo_trans trmv_d_dia_u_lo_trans
+#define trmv_dia_n_hi_trans trmv_d_dia_n_hi_trans
+#define trmv_dia_u_hi_trans trmv_d_dia_u_hi_trans
+#define diagmv_dia_n diagmv_d_dia_n
+#define diagmv_dia_u diagmv_d_dia_u
+
+#define gemm_dia_row gemm_d_dia_row
+#define gemm_dia_col gemm_d_dia_col
+#define gemm_dia_row_trans gemm_d_dia_row_trans
+#define gemm_dia_col_trans gemm_d_dia_col_trans
+#define symm_dia_n_lo_row symm_d_dia_n_lo_row
+#define symm_dia_u_lo_row symm_d_dia_u_lo_row
+#define symm_dia_n_hi_row symm_d_dia_n_hi_row
+#define symm_dia_u_hi_row symm_d_dia_u_hi_row
+#define symm_dia_n_lo_col symm_d_dia_n_lo_col
+#define symm_dia_u_lo_col symm_d_dia_u_lo_col
+#define symm_dia_n_hi_col symm_d_dia_n_hi_col
+#define symm_dia_u_hi_col symm_d_dia_u_hi_col
+#define trmm_dia_n_lo_row trmm_d_dia_n_lo_row
+#define trmm_dia_u_lo_row trmm_d_dia_u_lo_row
+#define trmm_dia_n_hi_row trmm_d_dia_n_hi_row
+#define trmm_dia_u_hi_row trmm_d_dia_u_hi_row
+#define trmm_dia_n_lo_col trmm_d_dia_n_lo_col
+#define trmm_dia_u_lo_col trmm_d_dia_u_lo_col
+#define trmm_dia_n_hi_col trmm_d_dia_n_hi_col
+#define trmm_dia_u_hi_col trmm_d_dia_u_hi_col
+#define trmm_dia_n_lo_row_trans trmm_d_dia_n_lo_row_trans
+#define trmm_dia_u_lo_row_trans trmm_d_dia_u_lo_row_trans
+#define trmm_dia_n_hi_row_trans trmm_d_dia_n_hi_row_trans
+#define trmm_dia_u_hi_row_trans trmm_d_dia_u_hi_row_trans
+#define trmm_dia_n_lo_col_trans trmm_d_dia_n_lo_col_trans
+#define trmm_dia_u_lo_col_trans trmm_d_dia_u_lo_col_trans
+#define trmm_dia_n_hi_col_trans trmm_d_dia_n_hi_col_trans
+#define trmm_dia_u_hi_col_trans trmm_d_dia_u_hi_col_trans
+#define diagmm_dia_n_row diagmm_d_dia_n_row
+#define diagmm_dia_u_row diagmm_d_dia_u_row
+#define diagmm_dia_n_col diagmm_d_dia_n_col
+#define diagmm_dia_u_col diagmm_d_dia_u_col
+
+#define spmmd_dia_row spmmd_d_dia_row
+#define spmmd_dia_col spmmd_d_dia_col
+#define spmmd_dia_row_trans spmmd_d_dia_row_trans
+#define spmmd_dia_col_trans spmmd_d_dia_col_trans
+
+#define spmm_dia spmm_d_dia
+#define spmm_dia_trans spmm_d_dia_trans
+
+#define trsv_dia_n_lo trsv_d_dia_n_lo
+#define trsv_dia_u_lo trsv_d_dia_u_lo
+#define trsv_dia_n_hi trsv_d_dia_n_hi
+#define trsv_dia_u_hi trsv_d_dia_u_hi
+#define trsv_dia_n_lo_trans trsv_d_dia_n_lo_trans
+#define trsv_dia_u_lo_trans trsv_d_dia_u_lo_trans
+#define trsv_dia_n_hi_trans trsv_d_dia_n_hi_trans
+#define trsv_dia_u_hi_trans trsv_d_dia_u_hi_trans
+#define diagsv_dia_n diagsv_d_dia_n
+#define diagsv_dia_u diagsv_d_dia_u
+
+#define trsm_dia_n_lo_row trsm_d_dia_n_lo_row
+#define trsm_dia_u_lo_row trsm_d_dia_u_lo_row
+#define trsm_dia_n_hi_row trsm_d_dia_n_hi_row
+#define trsm_dia_u_hi_row trsm_d_dia_u_hi_row
+#define trsm_dia_n_lo_col trsm_d_dia_n_lo_col
+#define trsm_dia_u_lo_col trsm_d_dia_u_lo_col
+#define trsm_dia_n_hi_col trsm_d_dia_n_hi_col
+#define trsm_dia_u_hi_col trsm_d_dia_u_hi_col
+#define trsm_dia_n_lo_row_trans trsm_d_dia_n_lo_row_trans
+#define trsm_dia_u_lo_row_trans trsm_d_dia_u_lo_row_trans
+#define trsm_dia_n_hi_row_trans trsm_d_dia_n_hi_row_trans
+#define trsm_dia_u_hi_row_trans trsm_d_dia_u_hi_row_trans
+#define trsm_dia_n_lo_col_trans trsm_d_dia_n_lo_col_trans
+#define trsm_dia_u_lo_col_trans trsm_d_dia_u_lo_col_trans
+#define trsm_dia_n_hi_col_trans trsm_d_dia_n_hi_col_trans
+#define trsm_dia_u_hi_col_trans trsm_d_dia_u_hi_col_trans
+#define diagsm_dia_n_row diagsm_d_dia_n_row
+#define diagsm_dia_u_row diagsm_d_dia_u_row
+#define diagsm_dia_n_col diagsm_d_dia_n_col
+#define diagsm_dia_u_col diagsm_d_dia_u_col
+
+#define gemv_ell gemv_d_ell
+#define gemv_gebsr gemv_d_gebsr
+
+#define gemv_sell_csigma gemv_d_sell_csigma
+// ! insert new format kernel before this line
