@@ -137,9 +137,9 @@ static FILE *parse_mtx_header(const char *file, ALPHA_INT64 *m_p,
         else {
           *data_type = REAL;
         }
-        if (*data_type == COMPLEX) {
-          *data_type = REAL;
-        }
+        // if (*data_type == COMPLEX) {
+        //   *data_type = REAL;
+        // }
         if (!strcmp(matrix_type_str, SYM))
           *matrix_type = SYMMETRIC;
         else if (!strcmp(matrix_type_str, GEN))
@@ -1346,6 +1346,8 @@ void mkl_read_coo_c(const char *file, MKL_INT *m_p, MKL_INT *n_p,
       if (token != NULL) {
         val.imag = (float)atof(token);
       }
+    }else {
+      val.imag = val.real;
     }
     fake_row_index[real_nnz] = (MKL_INT)row - 1;
     fake_col_index[real_nnz] = (MKL_INT)col - 1;
@@ -1466,6 +1468,8 @@ void mkl_read_coo_z(const char *file, MKL_INT *m_p, MKL_INT *n_p,
       if (token != NULL) {
         val.imag = (double)atof(token);
       }
+    } else {
+      val.imag = val.real;
     }
     fake_row_index[real_nnz] = (MKL_INT)row - 1;
     fake_col_index[real_nnz] = (MKL_INT)col - 1;

@@ -51,7 +51,7 @@ static void mkl_spmm(const int argc, const char *argv[], const char *file, int t
 
   mkl_sparse_order(result);
 
-  mkl_call_exit(mkl_sparse_d_export_csc(result, ret_index, ret_rows, ret_cols, ret_rows_start,
+  mkl_call_exit(mkl_sparse_d_export_csr(result, ret_index, ret_rows, ret_cols, ret_rows_start,
                                         ret_rows_end, ret_col_index, ret_values),
                 "mkl_sparse_d_export_csc");
 

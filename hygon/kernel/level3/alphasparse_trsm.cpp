@@ -22,8 +22,6 @@ alphasparseStatus_t trsm_template(const alphasparseOperation_t op_rq,
     check_null_return(x, ALPHA_SPARSE_STATUS_NOT_INITIALIZED);
     check_null_return(y, ALPHA_SPARSE_STATUS_NOT_INITIALIZED);
 
-    check_return(A->datatype != ALPHA_SPARSE_DATATYPE, ALPHA_SPARSE_STATUS_INVALID_VALUE);
-
     check_return(A->mat->rows != A->mat->cols, ALPHA_SPARSE_STATUS_INVALID_VALUE);
     alphasparse_matrix_t compute_mat = NULL;
     struct alpha_matrix_descr compute_descr = dscr_rq;

@@ -51,7 +51,7 @@ static void mkl_spmm(const int argc, const char *argv[], const char *file, int t
 
   mkl_sparse_order(result);
 
-  mkl_call_exit(mkl_sparse_c_export_csc(result, ret_index, ret_rows, ret_cols, ret_rows_start,
+  mkl_call_exit(mkl_sparse_c_export_csr(result, ret_index, ret_rows, ret_cols, ret_rows_start,
                                         ret_rows_end, ret_col_index, ret_values),
                 "mkl_sparse_c_export_csc");
 
@@ -152,7 +152,7 @@ int main(int argc, const char *argv[]) {
              &mkl_rows_end, &mkl_col_index, &mkl_values);
     int mkl_nnz = mkl_rows_end[mkl_rows - 1];
     int alpha_nnz = alpha_rows_end[alpha_rows - 1];
-    status = check_s((float *)mkl_values, mkl_nnz, (float *)alpha_values, alpha_nnz*2);
+    status = check_s((float *)mkl_values, mkl_nnz*2, (float *)alpha_values, alpha_nnz*2);
 #endif
 
     // status = check_c_l3((float *)mkl_values, 0, mkl_nnz, alpha_values, 0, alpha_nnz,

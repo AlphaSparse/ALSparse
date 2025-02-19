@@ -13,7 +13,7 @@ alphasparseStatus_t alphasparse_export_csc_template(const alphasparse_matrix_t s
                           J **values)
 {
     check_null_return(source->mat, ALPHA_SPARSE_STATUS_NOT_SUPPORTED);
-    check_return(source->datatype != ALPHA_SPARSE_DATATYPE, ALPHA_SPARSE_STATUS_INVALID_VALUE);
+    // check_return(source->datatype != ALPHA_SPARSE_DATATYPE, ALPHA_SPARSE_STATUS_INVALID_VALUE);
     check_return(source->format != ALPHA_SPARSE_FORMAT_CSC, ALPHA_SPARSE_STATUS_INVALID_VALUE);
     internal_spmat mat = source->mat;
     *indexing = ALPHA_SPARSE_INDEX_BASE_ZERO;
